@@ -112,7 +112,7 @@ export function createProjectFiles({state,save,config,appRoot,dataRoot,readBody,
     const pack=url.pathname.match(/^\/api\/projects\/([a-f0-9-]+)\/archive$/);
     if(pack&&req.method==='POST'){
       const project=projectById(pack[1]);if(!project)throw fault('项目不存在。');
-      if(state.batchQueue.some(q=>q.projectId===project.id&&['waiting','dispatched'].includes(q.status)))throw fault('请等待项目生成完成后归档。');
+      if(state.batchQueue.some(q=>q.projectId===project.id&&['waiting','dispatched'].includes(q.status))||state.jobs.some(j=>j.projectId===project.id&&['submitting','queued','running','recovering'].includes(j.status)))throw fault('请等待项目生成完成后归档。');
       const id=randomUUID(),manifest=resolve(folder,id+'.json');writeFileSync(manifest,JSON.stringify(archiveData(project)));
       const result=await pythonJSON(config,appRoot,'archive-project.py',['pack',manifest,resolve(folder,id+'.zip')]);
       const record={id,projectId:project.id,title:project.name,createdAt:new Date().toISOString(),...result};state.archives.unshift(record);save();send(res,201,record);return true;

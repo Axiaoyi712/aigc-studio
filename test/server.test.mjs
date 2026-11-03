@@ -8,6 +8,10 @@ import { randomUUID } from 'node:crypto';
 import { createStudio } from '../server.mjs';
 import { videoMatches } from '../production.mjs';
 
+test('native refinement tasks are never reconciled against ComfyUI history',async t=>{
+  const h=await harness(t);const item={id:randomUUID(),template:'video-upscale',status:'running',outputs:[]};h.app.state.jobs.push(item);await h.app.refresh();assert.equal(item.status,'running');
+});
+
 async function listenLocal(server) {
   for (let attempt = 0; attempt < 20; attempt++) {
     try {

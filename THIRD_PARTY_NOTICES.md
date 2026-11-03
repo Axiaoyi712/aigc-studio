@@ -7,3 +7,6 @@ workflows/ 保存已适配的工作流配置，不包含模型权重。使用或
 原电脑上的第三方提示词合集、参考项目源码、个人角色素材、剧本、生成作品与商业资料均未纳入本次仓库。library/catalog.example.json 仅含为本项目编写的通用入门示例。
 
 本仓库当前作为个人源码备份整理；尚未设置统一开源许可证。
+
+
+高清精修通过spandrel加载作者发布的Real-ESRGAN模型，使用PyTorch与ComfyUI的分块计算工具；不修改ComfyUI核心代码，不随仓库分发模型权重。原项目与许可见 https://github.com/xinntao/Real-ESRGAN 。

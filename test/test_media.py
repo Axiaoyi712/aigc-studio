@@ -7,6 +7,9 @@ import tempfile
 import unittest
 import zipfile
 import av
+import importlib.util
+import hashlib
+from PIL import Image
 import numpy as np
 from fractions import Fraction
 
@@ -35,6 +38,30 @@ def generate(path):
 
 
 class MediaAcceptance(unittest.TestCase):
+    def test_refinement_streams_all_frames_preserves_audio_packets_and_keeps_original(self):
+        module_spec=importlib.util.spec_from_file_location('upscale_video',ROOT/'upscale-video.py')
+        module=importlib.util.module_from_spec(module_spec);module_spec.loader.exec_module(module)
+        with tempfile.TemporaryDirectory() as directory:
+            folder=Path(directory);source=folder/'source.mp4';generate(source);before=hashlib.sha256(source.read_bytes()).hexdigest();calls=[]
+            def transform(pixels):
+                calls.append(pixels.shape);return Image.fromarray(pixels).resize((320,192))
+            output=folder/'enhanced.mp4';report=module.enhance_video(source,output,transform,320,320)
+            self.assertEqual(len(calls),48);self.assertEqual(report['frame_count'],48);self.assertEqual(report['fps'],24);self.assertTrue(report['audio']);self.assertEqual(hashlib.sha256(source.read_bytes()).hexdigest(),before)
+            def packets(path):
+                with av.open(str(path)) as container:return b''.join(bytes(p) for p in container.demux(audio=0) if p.dts is not None)
+            self.assertEqual(packets(source),packets(output))
+            with av.open(str(output)) as result:
+                frames=list(result.decode(video=0));self.assertEqual(len(frames),48);self.assertEqual((frames[0].width,frames[0].height),(320,320));self.assertLess(float(frames[12].to_ndarray(format='rgb24')[0].mean()),3)
+
+    def test_refinement_failure_removes_partial_output(self):
+        module_spec=importlib.util.spec_from_file_location('upscale_video',ROOT/'upscale-video.py')
+        module=importlib.util.module_from_spec(module_spec);module_spec.loader.exec_module(module)
+        with tempfile.TemporaryDirectory() as directory:
+            folder=Path(directory);source=folder/'source.mp4';generate(source);output=folder/'enhanced.mp4'
+            def fail(pixels):raise RuntimeError('model failed')
+            with self.assertRaises(RuntimeError):module.enhance_video(source,output,fail,320,320)
+            self.assertFalse(output.exists());self.assertFalse((folder/'enhanced.partial.mp4').exists());self.assertTrue(source.exists())
+
     def test_selected_frames_fixed_canvas_and_muted_audio(self):
         with tempfile.TemporaryDirectory() as folder:
             folder=Path(folder);source=folder/"source.mp4";generate(source)

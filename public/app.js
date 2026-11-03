@@ -1,4 +1,5 @@
 import { openProjects, closeProjects } from './projects.js';
+import { upscaleMarkup,upscaleClick } from './upscale.js';
 import { showPromptPicker, openPromptPage } from './prompts.js';
 import { cameras, actions, styles, normalizeVideoOptions, composeVideoPrompt, videoDurations, videoProfileLabels, videoResolutionLabel } from './video-options.js';
 const $ = selector => document.querySelector(selector);
@@ -196,7 +197,7 @@ $('#create-form').addEventListener('submit', async event => {
 });
 function actionMarkup(job) {
   const file = job.outputs?.[0];
-  return `<div class="task-actions"><button type="button" data-open-work-folder="${job.id}">打开所在文件夹</button>${file ? `<a href="${file.url}?download=1" download>保存${file.kind === 'video' ? '视频' : '图片'}</a>${file.kind === 'image' ? `<button type="button" data-use="${job.id}">用作视频首帧 ↗</button>` : ''}` : ''}${active.has(job.status) ? `<button type="button" class="cancel" data-cancel="${job.id}">停止此任务</button>` : `<button type="button" class="delete-work" data-delete-work="${job.id}" title="从作品列表删除，保留本机文件和项目引用">删除</button>`}</div>`;
+  return `<div class="task-actions"><button type="button" data-open-work-folder="${job.id}">打开所在文件夹</button>${file ? `<a href="${file.url}?download=1" download>保存${file.kind === 'video' ? '视频' : '图片'}</a>${file.kind === 'image' ? `<button type="button" data-use="${job.id}">用作视频首帧 ↗</button>` : ''}` : ''}${upscaleMarkup(job,jobs)}${active.has(job.status) ? `<button type="button" class="cancel" data-cancel="${job.id}">停止此任务</button>` : `<button type="button" class="delete-work" data-delete-work="${job.id}" title="从作品列表删除，保留本机文件和项目引用">删除</button>`}</div>`;
 }
 function renderPreview() {
   const job = jobs.find(item => item.id === selectedJob);
@@ -294,6 +295,7 @@ async function refreshJobs() {
 document.addEventListener('click', async event => {
   const nav = event.target.closest('[data-section]');
   if (nav) { switchSection(nav.dataset.section); return; }
+  const upscaleButton=event.target.closest('[data-upscale],[data-upscale-compare],[data-stop-upscale]');if(upscaleButton&&!upscaleButton.closest('#projects-panel')){try{upscaleButton.disabled=true;await upscaleClick(upscaleButton,(path,body)=>body===undefined?api(path):post(path,body),refreshJobs);if(upscaleButton.dataset.upscale)notice('高清精修已开始，完成后可对比原片与高清版。');}catch(error){notice(error.message,true);}finally{upscaleButton.disabled=false;}return;}
   const folderButton=event.target.closest('[data-open-work-folder]');if(folderButton){try{await post('/api/jobs/'+folderButton.dataset.openWorkFolder+'/folder',{});}catch(error){notice(error.message,true);}return;}
   const remove = event.target.closest('[data-delete-work]');
   if (remove) {

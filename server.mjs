@@ -12,6 +12,7 @@ import { primaryOutput, localMedia } from './media.mjs';
 import { createProjectFiles } from './project-files.mjs';
 import { createAssistant } from './assistant.mjs';
 import { createStorage } from './storage.mjs';
+import { createUpscaler } from './upscale.mjs';
 
 const root = dirname(fileURLToPath(import.meta.url));
 const activeStates = new Set(['submitting', 'queued', 'running', 'recovering']);
@@ -91,7 +92,7 @@ export function createStudio(config, { appRoot = root, dataRoot = resolve(appRoo
     const primary = primaryOutput(job);
     return { ...job, outputs: (job.outputs ?? []).map(file => ({ ...file, url: `/api/media/${job.id}/${file.index}` })).sort((a, b) => Number(b.index === primary?.index) - Number(a.index === primary?.index)) };
   }
-  function workflowSnapshot(prompt,source='submission') { return {version:'0.5.0',source,capturedAt:new Date().toISOString(),sha256:createHash('sha256').update(JSON.stringify(prompt)).digest('hex'),models:Object.values(prompt).flatMap(n=>['unet_name','clip_name','vae_name','lora_name'].filter(k=>n.inputs[k]).map(k=>n.inputs[k])),graph:structuredClone(prompt)}; }
+  function workflowSnapshot(prompt,source='submission') { return {version:'0.6.0',source,capturedAt:new Date().toISOString(),sha256:createHash('sha256').update(JSON.stringify(prompt)).digest('hex'),models:Object.values(prompt).flatMap(n=>['unet_name','clip_name','vae_name','lora_name'].filter(k=>n.inputs[k]).map(k=>n.inputs[k])),graph:structuredClone(prompt)}; }
   function mediaOutputs(history) {
     const files = [];
     for (const output of Object.values(history.outputs ?? {})) {
@@ -106,7 +107,7 @@ export function createStudio(config, { appRoot = root, dataRoot = resolve(appRoo
   }
   async function refresh() {
     if (updating || closed) return;
-    const jobs = state.jobs.filter(job => activeStates.has(job.status));
+    const jobs = state.jobs.filter(job => activeStates.has(job.status)&&job.template!=='video-upscale');
     if (!jobs.length) return;
     updating = true;
     try {
@@ -183,7 +184,7 @@ export function createStudio(config, { appRoot = root, dataRoot = resolve(appRoo
   async function submitJob(body, context = {}) {
     const existing = state.jobs.find(job => job.id === body.requestId);
     if (existing) return existing;
-    if (submitting || projects.isExporting()) throw fault('正在提交任务或拼接成片，请稍候。', 409);
+    if (submitting || projects.isExporting() || upscale.busy()) throw fault('正在提交任务、高清精修或拼接成片，请稍候。', 409);
     submitting = true;
     try {
       const { input, id, prompt } = await prepareJob(body, context);
@@ -203,10 +204,11 @@ export function createStudio(config, { appRoot = root, dataRoot = resolve(appRoo
       save(); return job;
     } finally { submitting = false; }
   }
-  const projects = createProjects({ state, save, submitJob, refresh, json, upstream, publicJob, config, appRoot, dataRoot, send, readBody });
+  const projects = createProjects({ state, save, submitJob, refresh, json, upstream, publicJob, config, appRoot, dataRoot, send, readBody, isEnhancing:()=>upscale.busy() });
   const prompts = createPromptLibrary({ state, save, appRoot, dataRoot, config, send, readBody });
   const projectFiles = createProjectFiles({state,save,config,appRoot,dataRoot,send,readBody});
-  const assistant = createAssistant({config,state,save,dataRoot,json,send,readBody,isGenerating:()=>submitting||projects.isExporting()||state.jobs.some(j=>activeStates.has(j.status))});
+  const assistant = createAssistant({config,state,save,dataRoot,json,send,readBody,isGenerating:()=>submitting||projects.isExporting()||upscale.busy()||state.jobs.some(j=>activeStates.has(j.status))});
+  const upscale=createUpscaler({state,save,config,appRoot,send,readBody,json,post,publicJob,isBusy:()=>submitting||projects.isExporting()||state.jobs.some(j=>activeStates.has(j.status))||state.batchQueue.some(q=>['waiting','dispatched'].includes(q.status)),release:()=>assistant.release()});
   const timer = setInterval(() => { connectEvents(); void projects.tick(); }, 3000);
   timer.unref();
   for (const job of state.jobs) if (activeStates.has(job.status)) job.status = 'recovering';
@@ -220,6 +222,7 @@ export function createStudio(config, { appRoot = root, dataRoot = resolve(appRoo
         if (!url.pathname.startsWith('/api/uploads') && url.pathname!=='/api/audio' && url.pathname!=='/api/projects/import' && req.headers['content-type']?.split(';')[0] !== 'application/json') throw fault('请求必须使用 JSON。', 415);
       }
       if (await storage.handle(req,res,url,send)) return;
+      if (await upscale.handle(req,res,url)) return;
       if (await assistant.handle(req,res,url)) return;
       if (await projectFiles.handle(req,res,url)) return;
       if (await projects.handle(req, res, url)) return;
@@ -330,7 +333,7 @@ export function createStudio(config, { appRoot = root, dataRoot = resolve(appRoo
       if (req.method === 'GET' && url.pathname === '/api/roadmap') {
         return send(res, 200, { content: await readFile(resolve(appRoot, '制作路线.md'), 'utf8') });
       }
-      const pages = { '/': 'index.html', '/app.js': 'app.js', '/style.css': 'style.css', '/icon.svg': 'icon.svg', '/favicon.ico': 'icon.svg', '/projects.js': 'projects.js', '/projects.css': 'projects.css', '/prompts.js': 'prompts.js', '/prompts.css': 'prompts.css', '/video-options.js': 'video-options.js', '/director-options.js':'director-options.js', '/production-ui.js':'production-ui.js', '/production.css':'production.css' };
+      const pages = { '/': 'index.html', '/app.js': 'app.js', '/style.css': 'style.css', '/icon.svg': 'icon.svg', '/favicon.ico': 'icon.svg', '/projects.js': 'projects.js', '/projects.css': 'projects.css', '/prompts.js': 'prompts.js', '/prompts.css': 'prompts.css', '/video-options.js': 'video-options.js', '/director-options.js':'director-options.js', '/upscale.js':'upscale.js', '/production-ui.js':'production-ui.js', '/production.css':'production.css' };
       if (req.method === 'GET' && pages[url.pathname]) {
         const file = pages[url.pathname];
         res.writeHead(200, { 'Content-Type': mime[extname(file)], 'Cache-Control': 'no-cache', 'X-Content-Type-Options': 'nosniff' });
@@ -356,7 +359,7 @@ export function createStudio(config, { appRoot = root, dataRoot = resolve(appRoo
     res.on('close', () => stream.destroy());
     stream.pipe(res);
   }
-  server.on('close', () => { closed = true; clearInterval(timer); ws?.close(); assistant.close(); });
+  server.on('close', () => { closed = true; clearInterval(timer); ws?.close(); assistant.close(); upscale.close(); });
   return { server, state, refresh, tick: projects.tick };
 }
 

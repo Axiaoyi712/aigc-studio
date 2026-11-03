@@ -12,7 +12,7 @@ const active = new Set(['submitting', 'queued', 'running', 'recovering']);
 const pending = item => ['waiting', 'dispatched'].includes(item.status);
 function fail(message, status = 400) { throw Object.assign(new Error(message), { status }); }
 function text(value, limit = 6000) { return String(value ?? '').trim().slice(0, limit); }
-export function createProjects({ state, save, submitJob, refresh, json, upstream, publicJob, config, appRoot, dataRoot, send, readBody }) {
+export function createProjects({ state, save, submitJob, refresh, json, upstream, publicJob, config, appRoot, dataRoot, send, readBody, isEnhancing=()=>false }) {
   state.projects ??= [];
   state.assets ??= [];
   state.batchQueue ??= [];
@@ -65,7 +65,7 @@ export function createProjects({ state, save, submitJob, refresh, json, upstream
     ticking = true;
     try {
       await refresh(); updateItems();
-      if (state.queuePaused || exporting || state.jobs.some(job => active.has(job.status))) return;
+      if (state.queuePaused || exporting || isEnhancing() || state.jobs.some(job => active.has(job.status))) return;
       const item = state.batchQueue.find(item => item.status === 'waiting');
       if (!item) return;
       const queue = await json('/queue');
@@ -196,7 +196,7 @@ export function createProjects({ state, save, submitJob, refresh, json, upstream
     } finally { tailProjects.delete(project.id); }
   }
   function startExport(project) {
-    if (exporting || state.jobs.some(job => active.has(job.status)) || state.batchQueue.some(pending)) fail('请先完成或取消队列中的任务，再拼接导出。', 409);
+    if (exporting || isEnhancing() || state.jobs.some(job => active.has(job.status)) || state.batchQueue.some(pending)) fail('请先完成或取消队列中的任务，再拼接导出。', 409);
     if (!project.shots.length) fail('项目中还没有镜头。');
     const videos = project.shots.map(shot => currentVideo(shot, project) ?? fail(`镜头「${shot.title}」还没有与当前角色及确认首帧对应的成功视频。`));
     const paths = videos.map(localVideo);

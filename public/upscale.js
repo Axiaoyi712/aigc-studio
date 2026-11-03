@@ -1,0 +1,18 @@
+const h=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+export function upscaleMarkup(video,jobs){
+ if(video?.status!=='success'||video.outputs?.[0]?.kind!=='video')return '';
+ const refinement=video.enhancement?video:jobs.find(j=>j.sourceVideoJobId===video.id&&j.enhancement);
+ if(refinement?.status==='running')return `<p class="field-help">高清精修中 · ${refinement.progress?.value||0} / ${refinement.progress?.max||'…'} 帧</p><button type="button" class="project-button" data-stop-upscale="${refinement.id}">停止精修</button>`;
+ return `${refinement?.status==='failed'?'<p class="field-help">上次精修未完成，可重试；详情见我的作品。</p>':''}${!video.enhancement?`<button type="button" class="project-button" data-upscale="${video.id}">高清精修1080p</button>`:''}${refinement?.status==='success'?`<button type="button" class="project-button" data-upscale-compare="${refinement.id}">原片／高清对比</button>`:''}`;
+}
+export async function upscaleClick(button,api,reload){
+ if(button.dataset.upscale){await api('/api/jobs/'+button.dataset.upscale+'/upscale',{});await reload();return true;}
+ if(button.dataset.stopUpscale){await api('/api/jobs/'+button.dataset.stopUpscale+'/cancel',{});await reload();return true;}
+ if(!button.dataset.upscaleCompare)return false;
+ const data=await api('/api/jobs/'+button.dataset.upscaleCompare+'/comparison');
+ const dialog=document.createElement('dialog');dialog.className='production-dialog';
+ dialog.innerHTML=`<div class="dialog-heading"><h2>原片与高清精修对比</h2><button type="button" class="project-button" data-close aria-label="关闭">×</button></div><div class="comparison-grid">${[data.source,data.enhanced].map((j,i)=>`<div><h3>${i?'高清精修候选':'原片'}</h3><p data-video-size>${j.outputs[0].metadata?.width?`${h(j.outputs[0].metadata.width)} × ${h(j.outputs[0].metadata.height)}`:'读取尺寸…'}</p><div class="comparison-media"><video controls playsinline preload="metadata" ${i?'muted':''} src="${j.outputs[0].url}"></video></div><a href="${j.outputs[0].url}?download=1" download>保存${i?'高清版':'原片'}</a></div>`).join('')}</div><div class="production-tools"><button type="button" class="project-button" data-play>同步播放</button><button type="button" class="project-button" data-pause>暂停</button><button type="button" class="project-button" data-reset>回到开头</button></div><p class="field-help">保留原片声音，高清侧默认静音避免重叠。检查细节、人物外观和闪烁；项目中可在视频版本列表选择采用高清版，并把成片画布设为1080p，以免导出时再次缩小。</p>`;
+ const videos=[...dialog.querySelectorAll('video')];for(const video of videos)video.onloadedmetadata=()=>{video.closest('.comparison-media').parentElement.querySelector('[data-video-size]').textContent=video.videoWidth+' × '+video.videoHeight;};dialog.querySelector('[data-close]').onclick=()=>dialog.close();dialog.onclose=()=>{videos.forEach(v=>v.pause());dialog.remove();};
+ dialog.querySelector('[data-play]').onclick=()=>{videos[1].currentTime=videos[0].currentTime;for(const v of videos)void v.play().catch(()=>{});};
+ dialog.querySelector('[data-pause]').onclick=()=>videos.forEach(v=>v.pause());dialog.querySelector('[data-reset]').onclick=()=>videos.forEach(v=>{v.pause();v.currentTime=0;});document.body.append(dialog);dialog.showModal();return true;
+}
