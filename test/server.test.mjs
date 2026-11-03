@@ -17,7 +17,7 @@ async function listenLocal(server) {
     try {
       await new Promise((ok, reject) => { server.once('error', reject); server.listen(20000 + Math.floor(Math.random() * 40000), '127.0.0.1', () => { server.removeListener('error', reject); ok(); }); });
       return;
-    } catch (error) { if (error.code !== 'EADDRINUSE') throw error; }
+    } catch (error) { if (!['EADDRINUSE','EACCES'].includes(error.code)) throw error; }
   }
   throw Error('No available test port.');
 }
