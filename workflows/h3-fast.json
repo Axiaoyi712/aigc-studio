@@ -1,0 +1,1131 @@
+{
+  "last_node_id": 19,
+  "last_link_id": 23,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "UNETLoader",
+      "title": "H3主模型 · W6A8低内存量化",
+      "pos": [
+        50,
+        140
+      ],
+      "size": [
+        420,
+        120
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            1
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "UNETLoader",
+        "cnr_id": "comfy-core",
+        "ver": "0.43.0",
+        "models": [
+          {
+            "name": "minimax_h3_fl2va_pruned_w6a8.safetensors",
+            "directory": "diffusion_models",
+            "url": "https://modelscope.cn/models/Comfy-Org/MiniMax-H3/resolve/master/diffusion_models/minimax_h3_fl2va_pruned_w6a8.safetensors"
+          }
+        ]
+      },
+      "widgets_values": [
+        "minimax_h3_fl2va_pruned_w6a8.safetensors",
+        "default"
+      ]
+    },
+    {
+      "id": 2,
+      "type": "CLIPLoader",
+      "title": "H3专用文字编码器 · NVFP4",
+      "pos": [
+        50,
+        340
+      ],
+      "size": [
+        420,
+        150
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "CLIP",
+          "type": "CLIP",
+          "links": [
+            7
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CLIPLoader",
+        "cnr_id": "comfy-core",
+        "ver": "0.43.0",
+        "models": [
+          {
+            "name": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+            "directory": "text_encoders",
+            "url": "https://modelscope.cn/models/Comfy-Org/MiniMax-H3/resolve/master/text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors"
+          }
+        ]
+      },
+      "widgets_values": [
+        "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+        "minimax",
+        "default"
+      ]
+    },
+    {
+      "id": 3,
+      "type": "VAELoader",
+      "title": "视频VAE · INT8",
+      "pos": [
+        50,
+        580
+      ],
+      "size": [
+        420,
+        100
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "VAE",
+          "type": "VAE",
+          "links": [
+            8,
+            18
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VAELoader",
+        "cnr_id": "comfy-core",
+        "ver": "0.43.0",
+        "models": [
+          {
+            "name": "minimax_h3_video_vae_int8_convrot.safetensors",
+            "directory": "vae",
+            "url": "https://modelscope.cn/models/Comfy-Org/MiniMax-H3/resolve/master/vae/minimax_h3_video_vae_int8_convrot.safetensors"
+          }
+        ]
+      },
+      "widgets_values": [
+        "minimax_h3_video_vae_int8_convrot.safetensors"
+      ]
+    },
+    {
+      "id": 4,
+      "type": "VAELoader",
+      "title": "音频VAE",
+      "pos": [
+        50,
+        770
+      ],
+      "size": [
+        420,
+        100
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "VAE",
+          "type": "VAE",
+          "links": [
+            20
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VAELoader",
+        "cnr_id": "comfy-core",
+        "ver": "0.43.0",
+        "models": [
+          {
+            "name": "minimax_h3_audio_vae_fp32.safetensors",
+            "directory": "vae",
+            "url": "https://modelscope.cn/models/Comfy-Org/MiniMax-H3/resolve/master/vae/minimax_h3_audio_vae_fp32.safetensors"
+          }
+        ]
+      },
+      "widgets_values": [
+        "minimax_h3_audio_vae_fp32.safetensors"
+      ]
+    },
+    {
+      "id": 5,
+      "type": "LoraLoaderModelOnly",
+      "title": "8步加速LoRA · 与8步采样配套",
+      "pos": [
+        50,
+        950
+      ],
+      "size": [
+        420,
+        130
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 1
+        }
+      ],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            9,
+            11
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoraLoaderModelOnly",
+        "cnr_id": "comfy-core",
+        "ver": "0.43.0",
+        "models": [
+          {
+            "name": "minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors",
+            "directory": "loras",
+            "url": "https://modelscope.cn/models/Comfy-Org/MiniMax-H3/resolve/master/loras/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors"
+          }
+        ]
+      },
+      "widgets_values": [
+        "minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors",
+        1
+      ]
+    },
+    {
+      "id": 6,
+      "type": "LoadImage",
+      "title": "① 上传首帧图片",
+      "pos": [
+        550,
+        140
+      ],
+      "size": [
+        360,
+        390
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            2
+          ]
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": []
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoadImage",
+        "cnr_id": "comfy-core",
+        "ver": "0.43.0"
+      },
+      "widgets_values": [
+        "example.png",
+        "image"
+      ]
+    },
+    {
+      "id": 7,
+      "type": "ImageScaleToTotalPixels",
+      "title": "② 保持比例 · 低显存预览尺寸",
+      "pos": [
+        550,
+        630
+      ],
+      "size": [
+        360,
+        150
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 2
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            3,
+            4
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ImageScaleToTotalPixels",
+        "cnr_id": "comfy-core",
+        "ver": "0.43.0"
+      },
+      "widgets_values": [
+        "lanczos",
+        0.23,
+        32
+      ]
+    },
+    {
+      "id": 8,
+      "type": "GetImageSize",
+      "title": "尺寸自动跟随首帧",
+      "pos": [
+        550,
+        880
+      ],
+      "size": [
+        360,
+        100
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 3
+        }
+      ],
+      "outputs": [
+        {
+          "name": "width",
+          "type": "INT",
+          "links": [
+            5
+          ]
+        },
+        {
+          "name": "height",
+          "type": "INT",
+          "links": [
+            6
+          ]
+        },
+        {
+          "name": "batch_size",
+          "type": "INT",
+          "links": []
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "GetImageSize",
+        "cnr_id": "comfy-core",
+        "ver": "0.43.0"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 9,
+      "type": "MiniMaxH3ImageToVideo",
+      "title": "③ 动作与声音提示词 · 124帧约5.17秒",
+      "pos": [
+        990,
+        140
+      ],
+      "size": [
+        500,
+        440
+      ],
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "first_frame",
+          "type": "IMAGE",
+          "link": 4
+        },
+        {
+          "name": "width",
+          "type": "INT",
+          "link": 5,
+          "widget": {
+            "name": "width"
+          }
+        },
+        {
+          "name": "height",
+          "type": "INT",
+          "link": 6,
+          "widget": {
+            "name": "height"
+          }
+        },
+        {
+          "name": "clip",
+          "type": "CLIP",
+          "link": 7
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 8
+        }
+      ],
+      "outputs": [
+        {
+          "name": "positive",
+          "type": "CONDITIONING",
+          "links": [
+            10
+          ]
+        },
+        {
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": [
+            16
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "MiniMaxH3ImageToVideo",
+        "cnr_id": "comfy-core",
+        "ver": "0.43.0"
+      },
+      "widgets_values": [
+        "A single continuous shot based on the input image. Preserve the subject, appearance, outfit, lighting and background. Static camera, gentle natural movement, no scene cuts, no text. Audio: quiet ambient sound, no speech.",
+        480,
+        480,
+        124
+      ]
+    },
+    {
+      "id": 10,
+      "type": "BasicGuider",
+      "title": "单条件引导",
+      "pos": [
+        990,
+        690
+      ],
+      "size": [
+        500,
+        100
+      ],
+      "flags": {},
+      "order": 9,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 9
+        },
+        {
+          "name": "conditioning",
+          "type": "CONDITIONING",
+          "link": 10
+        }
+      ],
+      "outputs": [
+        {
+          "name": "GUIDER",
+          "type": "GUIDER",
+          "links": [
+            13
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "BasicGuider",
+        "cnr_id": "comfy-core",
+        "ver": "0.43.0"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 11,
+      "type": "RandomNoise",
+      "title": "固定种子 · 便于对比",
+      "pos": [
+        1570,
+        140
+      ],
+      "size": [
+        350,
+        110
+      ],
+      "flags": {},
+      "order": 10,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "NOISE",
+          "type": "NOISE",
+          "links": [
+            12
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "RandomNoise",
+        "cnr_id": "comfy-core",
+        "ver": "0.43.0"
+      },
+      "widgets_values": [
+        42,
+        "fixed"
+      ]
+    },
+    {
+      "id": 12,
+      "type": "KSamplerSelect",
+      "title": "采样器 · 官方默认",
+      "pos": [
+        1570,
+        340
+      ],
+      "size": [
+        350,
+        90
+      ],
+      "flags": {},
+      "order": 11,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "SAMPLER",
+          "type": "SAMPLER",
+          "links": [
+            14
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "KSamplerSelect",
+        "cnr_id": "comfy-core",
+        "ver": "0.43.0"
+      },
+      "widgets_values": [
+        "res_multistep"
+      ]
+    },
+    {
+      "id": 13,
+      "type": "BasicScheduler",
+      "title": "④ 加速预览 · 8步",
+      "pos": [
+        1570,
+        530
+      ],
+      "size": [
+        350,
+        150
+      ],
+      "flags": {},
+      "order": 12,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 11
+        }
+      ],
+      "outputs": [
+        {
+          "name": "SIGMAS",
+          "type": "SIGMAS",
+          "links": [
+            15
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "BasicScheduler",
+        "cnr_id": "comfy-core",
+        "ver": "0.43.0"
+      },
+      "widgets_values": [
+        "simple",
+        8,
+        1
+      ]
+    },
+    {
+      "id": 14,
+      "type": "SamplerCustomAdvanced",
+      "title": "视频与声音联合采样",
+      "pos": [
+        1570,
+        790
+      ],
+      "size": [
+        350,
+        170
+      ],
+      "flags": {},
+      "order": 13,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "noise",
+          "type": "NOISE",
+          "link": 12
+        },
+        {
+          "name": "guider",
+          "type": "GUIDER",
+          "link": 13
+        },
+        {
+          "name": "sampler",
+          "type": "SAMPLER",
+          "link": 14
+        },
+        {
+          "name": "sigmas",
+          "type": "SIGMAS",
+          "link": 15
+        },
+        {
+          "name": "latent_image",
+          "type": "LATENT",
+          "link": 16
+        }
+      ],
+      "outputs": [
+        {
+          "name": "output",
+          "type": "LATENT",
+          "links": [
+            17,
+            19
+          ]
+        },
+        {
+          "name": "denoised_output",
+          "type": "LATENT",
+          "links": []
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SamplerCustomAdvanced",
+        "cnr_id": "comfy-core",
+        "ver": "0.43.0"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 15,
+      "type": "VAEDecodeTiled",
+      "title": "⑤ 分块解码视频 · 节省显存",
+      "pos": [
+        2000,
+        140
+      ],
+      "size": [
+        360,
+        220
+      ],
+      "flags": {},
+      "order": 14,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "samples",
+          "type": "LATENT",
+          "link": 17
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 18
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            21
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VAEDecodeTiled",
+        "cnr_id": "comfy-core",
+        "ver": "0.43.0"
+      },
+      "widgets_values": [
+        256,
+        64,
+        32,
+        8
+      ]
+    },
+    {
+      "id": 16,
+      "type": "VAEDecodeAudio",
+      "title": "解码同步音频",
+      "pos": [
+        2000,
+        470
+      ],
+      "size": [
+        360,
+        100
+      ],
+      "flags": {},
+      "order": 15,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "samples",
+          "type": "LATENT",
+          "link": 19
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 20
+        }
+      ],
+      "outputs": [
+        {
+          "name": "AUDIO",
+          "type": "AUDIO",
+          "links": [
+            22
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VAEDecodeAudio",
+        "cnr_id": "comfy-core",
+        "ver": "0.43.0"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 17,
+      "type": "CreateVideo",
+      "title": "合成视频 · 24fps",
+      "pos": [
+        2000,
+        700
+      ],
+      "size": [
+        360,
+        150
+      ],
+      "flags": {},
+      "order": 16,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 21
+        },
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "link": 22
+        }
+      ],
+      "outputs": [
+        {
+          "name": "VIDEO",
+          "type": "VIDEO",
+          "links": [
+            23
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CreateVideo",
+        "cnr_id": "comfy-core",
+        "ver": "0.43.0"
+      },
+      "widgets_values": [
+        24,
+        "auto",
+        "sRGB",
+        "none"
+      ]
+    },
+    {
+      "id": 18,
+      "type": "SaveVideo",
+      "title": "⑥ 保存MP4 · 自动编号",
+      "pos": [
+        2440,
+        140
+      ],
+      "size": [
+        420,
+        650
+      ],
+      "flags": {},
+      "order": 17,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "video",
+          "type": "VIDEO",
+          "link": 23
+        }
+      ],
+      "outputs": [
+        {
+          "name": "video",
+          "type": "VIDEO",
+          "links": []
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SaveVideo",
+        "cnr_id": "comfy-core",
+        "ver": "0.43.0"
+      },
+      "widgets_values": [
+        "video/H3-I2V",
+        "auto",
+        "auto"
+      ]
+    },
+    {
+      "id": 19,
+      "type": "Note",
+      "title": "新手使用 · 免费本地视频",
+      "pos": [
+        990,
+        900
+      ],
+      "size": [
+        500,
+        330
+      ],
+      "flags": {},
+      "order": 18,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {},
+      "widgets_values": [
+        "此副本用于我的 AIGC。原始工作流保留在 ComfyUI 中。"
+      ],
+      "color": "#293b48",
+      "bgcolor": "#1d2a33"
+    }
+  ],
+  "links": [
+    [
+      1,
+      1,
+      0,
+      5,
+      0,
+      "MODEL"
+    ],
+    [
+      2,
+      6,
+      0,
+      7,
+      0,
+      "IMAGE"
+    ],
+    [
+      3,
+      7,
+      0,
+      8,
+      0,
+      "IMAGE"
+    ],
+    [
+      4,
+      7,
+      0,
+      9,
+      0,
+      "IMAGE"
+    ],
+    [
+      5,
+      8,
+      0,
+      9,
+      1,
+      "INT"
+    ],
+    [
+      6,
+      8,
+      1,
+      9,
+      2,
+      "INT"
+    ],
+    [
+      7,
+      2,
+      0,
+      9,
+      3,
+      "CLIP"
+    ],
+    [
+      8,
+      3,
+      0,
+      9,
+      4,
+      "VAE"
+    ],
+    [
+      9,
+      5,
+      0,
+      10,
+      0,
+      "MODEL"
+    ],
+    [
+      10,
+      9,
+      0,
+      10,
+      1,
+      "CONDITIONING"
+    ],
+    [
+      11,
+      5,
+      0,
+      13,
+      0,
+      "MODEL"
+    ],
+    [
+      12,
+      11,
+      0,
+      14,
+      0,
+      "NOISE"
+    ],
+    [
+      13,
+      10,
+      0,
+      14,
+      1,
+      "GUIDER"
+    ],
+    [
+      14,
+      12,
+      0,
+      14,
+      2,
+      "SAMPLER"
+    ],
+    [
+      15,
+      13,
+      0,
+      14,
+      3,
+      "SIGMAS"
+    ],
+    [
+      16,
+      9,
+      1,
+      14,
+      4,
+      "LATENT"
+    ],
+    [
+      17,
+      14,
+      0,
+      15,
+      0,
+      "LATENT"
+    ],
+    [
+      18,
+      3,
+      0,
+      15,
+      1,
+      "VAE"
+    ],
+    [
+      19,
+      14,
+      0,
+      16,
+      0,
+      "LATENT"
+    ],
+    [
+      20,
+      4,
+      0,
+      16,
+      1,
+      "VAE"
+    ],
+    [
+      21,
+      15,
+      0,
+      17,
+      0,
+      "IMAGE"
+    ],
+    [
+      22,
+      16,
+      0,
+      17,
+      1,
+      "AUDIO"
+    ],
+    [
+      23,
+      17,
+      0,
+      18,
+      0,
+      "VIDEO"
+    ]
+  ],
+  "groups": [
+    {
+      "id": 1,
+      "title": "模型区 · 免费本地量化",
+      "bounding": [
+        30,
+        50,
+        460,
+        1100
+      ],
+      "color": "#3f789e",
+      "font_size": 26,
+      "flags": {}
+    },
+    {
+      "id": 2,
+      "title": "首帧输入区 · 保持比例",
+      "bounding": [
+        530,
+        50,
+        400,
+        1050
+      ],
+      "color": "#3f789e",
+      "font_size": 26,
+      "flags": {}
+    },
+    {
+      "id": 3,
+      "title": "动作提示词区",
+      "bounding": [
+        970,
+        50,
+        540,
+        1230
+      ],
+      "color": "#3f789e",
+      "font_size": 26,
+      "flags": {}
+    },
+    {
+      "id": 4,
+      "title": "采样区 · 8GB测试",
+      "bounding": [
+        1550,
+        50,
+        390,
+        1000
+      ],
+      "color": "#3f789e",
+      "font_size": 26,
+      "flags": {}
+    },
+    {
+      "id": 5,
+      "title": "音视频解码区",
+      "bounding": [
+        1980,
+        50,
+        400,
+        900
+      ],
+      "color": "#3f789e",
+      "font_size": 26,
+      "flags": {}
+    },
+    {
+      "id": 6,
+      "title": "视频保存区",
+      "bounding": [
+        2420,
+        50,
+        460,
+        850
+      ],
+      "color": "#3f789e",
+      "font_size": 26,
+      "flags": {}
+    }
+  ],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 0.58,
+      "offset": [
+        70,
+        110
+      ]
+    },
+    "workflowRendererVersion": "LG"
+  },
+  "version": 0.4
+}

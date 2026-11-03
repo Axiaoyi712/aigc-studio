@@ -1,0 +1,28 @@
+{
+  "root": "",
+  "builtAt": null,
+  "sources": [],
+  "entries": [
+    {
+      "id": "starter-lakeside-image",
+      "title": "湖边小屋首帧",
+      "body": "清晨湖边的一座木屋，远处松树林，柔和自然光，横向远景，无人物，无文字。",
+      "kind": "image",
+      "group": "入门示例",
+      "source": "内置示例",
+      "location": "",
+      "sourceModel": "通用"
+    },
+    {
+      "id": "starter-lakeside-video",
+      "title": "湖边小屋动作",
+      "body": "固定机位，湖面泛起细小波纹，树枝随风轻动，保持木屋外观与光线，单一连续镜头。声音为风声和水声，无音乐。",
+      "kind": "video",
+      "group": "入门示例",
+      "source": "内置示例",
+      "location": "",
+      "sourceModel": "通用"
+    }
+  ],
+  "issues": []
+}

@@ -1,0 +1,14 @@
+{
+  "name": "我的 AIGC",
+  "comfyRoot": "E:/AI/ComfyUI_windows_portable/ComfyUI",
+  "comfyUrl": "http://127.0.0.1:18190",
+  "port": 18230,
+  "assistant": {
+    "serverPath": "",
+    "modelPath": "",
+    "baseUrl": "http://127.0.0.1:18311",
+    "model": "aigc-text"
+  },
+  "enableRef2VA": false,
+  "projectStorage": true
+}

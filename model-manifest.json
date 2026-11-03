@@ -1,0 +1,193 @@
+{
+  "note": "Models and ComfyUI are not included. Filenames must match your local installation.",
+  "workflows": [
+    {
+      "file": "flux-3ref.json",
+      "nodes": [
+        "UNETLoader",
+        "CLIPLoader",
+        "VAELoader",
+        "LoadImage",
+        "ImageScaleToTotalPixels",
+        "VAEEncode",
+        "CLIPTextEncode",
+        "ReferenceLatent",
+        "BasicGuider",
+        "KSamplerSelect",
+        "Flux2Scheduler",
+        "RandomNoise",
+        "EmptyFlux2LatentImage",
+        "SamplerCustomAdvanced",
+        "VAEDecode",
+        "SaveImage",
+        "Note",
+        "PrimitiveInt"
+      ],
+      "models": [
+        {
+          "node": "UNETLoader",
+          "file": "flux-2-klein-4b-fp8.safetensors"
+        },
+        {
+          "node": "CLIPLoader",
+          "file": "qwen_3_4b.safetensors"
+        },
+        {
+          "node": "VAELoader",
+          "file": "flux2-vae.safetensors"
+        }
+      ]
+    },
+    {
+      "file": "flux-edit.json",
+      "nodes": [
+        "UNETLoader",
+        "CLIPLoader",
+        "VAELoader",
+        "LoadImage",
+        "ImageScaleToTotalPixels",
+        "GetImageSize",
+        "VAEEncode",
+        "CLIPTextEncode",
+        "ReferenceLatent",
+        "BasicGuider",
+        "KSamplerSelect",
+        "Flux2Scheduler",
+        "RandomNoise",
+        "EmptyFlux2LatentImage",
+        "SamplerCustomAdvanced",
+        "VAEDecode",
+        "SaveImage",
+        "Note"
+      ],
+      "models": [
+        {
+          "node": "UNETLoader",
+          "file": "flux-2-klein-4b-fp8.safetensors"
+        },
+        {
+          "node": "CLIPLoader",
+          "file": "qwen_3_4b.safetensors"
+        },
+        {
+          "node": "VAELoader",
+          "file": "flux2-vae.safetensors"
+        }
+      ]
+    },
+    {
+      "file": "h3-base.json",
+      "nodes": [
+        "UNETLoader",
+        "CLIPLoader",
+        "VAELoader",
+        "LoadImage",
+        "ImageScaleToTotalPixels",
+        "GetImageSize",
+        "MiniMaxH3ImageToVideo",
+        "BasicGuider",
+        "RandomNoise",
+        "KSamplerSelect",
+        "BasicScheduler",
+        "SamplerCustomAdvanced",
+        "VAEDecodeTiled",
+        "VAEDecodeAudio",
+        "CreateVideo",
+        "SaveVideo",
+        "Note"
+      ],
+      "models": [
+        {
+          "node": "UNETLoader",
+          "file": "minimax_h3_fl2va_pruned_w6a8.safetensors"
+        },
+        {
+          "node": "CLIPLoader",
+          "file": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors"
+        },
+        {
+          "node": "VAELoader",
+          "file": "minimax_h3_video_vae_int8_convrot.safetensors"
+        },
+        {
+          "node": "VAELoader",
+          "file": "minimax_h3_audio_vae_fp32.safetensors"
+        }
+      ]
+    },
+    {
+      "file": "h3-fast.json",
+      "nodes": [
+        "UNETLoader",
+        "CLIPLoader",
+        "VAELoader",
+        "LoraLoaderModelOnly",
+        "LoadImage",
+        "ImageScaleToTotalPixels",
+        "GetImageSize",
+        "MiniMaxH3ImageToVideo",
+        "BasicGuider",
+        "RandomNoise",
+        "KSamplerSelect",
+        "BasicScheduler",
+        "SamplerCustomAdvanced",
+        "VAEDecodeTiled",
+        "VAEDecodeAudio",
+        "CreateVideo",
+        "SaveVideo",
+        "Note"
+      ],
+      "models": [
+        {
+          "node": "UNETLoader",
+          "file": "minimax_h3_fl2va_pruned_w6a8.safetensors"
+        },
+        {
+          "node": "CLIPLoader",
+          "file": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors"
+        },
+        {
+          "node": "VAELoader",
+          "file": "minimax_h3_video_vae_int8_convrot.safetensors"
+        },
+        {
+          "node": "VAELoader",
+          "file": "minimax_h3_audio_vae_fp32.safetensors"
+        },
+        {
+          "node": "LoraLoaderModelOnly",
+          "file": "minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors"
+        }
+      ]
+    },
+    {
+      "file": "z-image.json",
+      "nodes": [
+        "KSampler",
+        "UNETLoader",
+        "CLIPTextEncode",
+        "EmptySD3LatentImage",
+        "CLIPLoader",
+        "VAEDecode",
+        "PreviewImage",
+        "VAELoader",
+        "ModelSamplingAuraFlow",
+        "SaveImage"
+      ],
+      "models": [
+        {
+          "node": "UNETLoader",
+          "file": "z_image_turbo_bf16.safetensors"
+        },
+        {
+          "node": "CLIPLoader",
+          "file": "qwen_3_4b.safetensors"
+        },
+        {
+          "node": "VAELoader",
+          "file": "ae.safetensors"
+        }
+      ]
+    }
+  ]
+}

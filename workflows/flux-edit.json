@@ -1,0 +1,1272 @@
+{
+  "id": "8a00ab2b-9860-4bd5-8d55-c8e38743e652",
+  "revision": 0,
+  "last_node_id": 18,
+  "last_link_id": 21,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "UNETLoader",
+      "pos": [
+        60,
+        140
+      ],
+      "size": [
+        350,
+        120
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "UNet名称",
+          "name": "unet_name",
+          "type": "COMBO",
+          "widget": {
+            "name": "unet_name"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "数据类型",
+          "name": "weight_dtype",
+          "type": "COMBO",
+          "widget": {
+            "name": "weight_dtype"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "模型",
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            8
+          ]
+        }
+      ],
+      "title": "FLUX Klein 4B · FP8蒸馏模型",
+      "properties": {
+        "Node name for S&R": "UNETLoader",
+        "cnr_id": "comfy-core",
+        "ver": "0.43.0",
+        "models": [
+          {
+            "name": "flux-2-klein-4b-fp8.safetensors",
+            "url": "https://huggingface.co/black-forest-labs/FLUX.2-klein-4b-fp8/resolve/main/flux-2-klein-4b-fp8.safetensors",
+            "directory": "diffusion_models"
+          }
+        ]
+      },
+      "widgets_values": [
+        "flux-2-klein-4b-fp8.safetensors",
+        "default"
+      ],
+      "widgets_values_named": {
+        "unet_name": "flux-2-klein-4b-fp8.safetensors",
+        "weight_dtype": "default"
+      }
+    },
+    {
+      "id": 2,
+      "type": "CLIPLoader",
+      "pos": [
+        60,
+        340
+      ],
+      "size": [
+        350,
+        150
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "CLIP名称",
+          "name": "clip_name",
+          "type": "COMBO",
+          "widget": {
+            "name": "clip_name"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "类型",
+          "name": "type",
+          "type": "COMBO",
+          "widget": {
+            "name": "type"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "设备",
+          "name": "device",
+          "shape": 7,
+          "type": "COMBO",
+          "widget": {
+            "name": "device"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "CLIP",
+          "name": "CLIP",
+          "type": "CLIP",
+          "links": [
+            1
+          ]
+        }
+      ],
+      "title": "复用Qwen编码器 · 类型选flux2",
+      "properties": {
+        "Node name for S&R": "CLIPLoader",
+        "cnr_id": "comfy-core",
+        "ver": "0.43.0",
+        "models": [
+          {
+            "name": "qwen_3_4b.safetensors",
+            "url": "https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/text_encoders/qwen_3_4b.safetensors",
+            "directory": "text_encoders"
+          }
+        ]
+      },
+      "widgets_values": [
+        "qwen_3_4b.safetensors",
+        "flux2",
+        "default"
+      ],
+      "widgets_values_named": {
+        "clip_name": "qwen_3_4b.safetensors",
+        "type": "flux2",
+        "device": "default"
+      }
+    },
+    {
+      "id": 3,
+      "type": "VAELoader",
+      "pos": [
+        60,
+        570
+      ],
+      "size": [
+        350,
+        100
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "vae名称",
+          "name": "vae_name",
+          "type": "COMBO",
+          "widget": {
+            "name": "vae_name"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "VAE",
+          "name": "VAE",
+          "type": "VAE",
+          "links": [
+            5,
+            20
+          ]
+        }
+      ],
+      "title": "FLUX.2专用VAE",
+      "properties": {
+        "Node name for S&R": "VAELoader",
+        "cnr_id": "comfy-core",
+        "ver": "0.43.0",
+        "models": [
+          {
+            "name": "flux2-vae.safetensors",
+            "url": "https://huggingface.co/Comfy-Org/flux2-dev/resolve/main/split_files/vae/flux2-vae.safetensors",
+            "directory": "vae"
+          }
+        ]
+      },
+      "widgets_values": [
+        "flux2-vae.safetensors"
+      ],
+      "widgets_values_named": {
+        "vae_name": "flux2-vae.safetensors"
+      }
+    },
+    {
+      "id": 4,
+      "type": "LoadImage",
+      "pos": [
+        470,
+        140
+      ],
+      "size": [
+        380,
+        390
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "图像",
+          "name": "image",
+          "type": "COMBO",
+          "widget": {
+            "name": "image"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "选择文件上传",
+          "name": "upload",
+          "type": "IMAGEUPLOAD",
+          "widget": {
+            "name": "upload"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "图像",
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            2
+          ]
+        },
+        {
+          "localized_name": "遮罩",
+          "name": "MASK",
+          "type": "MASK",
+          "links": []
+        }
+      ],
+      "title": "① 上传要编辑的原图",
+      "properties": {
+        "Node name for S&R": "LoadImage",
+        "cnr_id": "comfy-core",
+        "ver": "0.43.0"
+      },
+      "widgets_values": [
+        "example.png",
+        "image"
+      ],
+      "widgets_values_named": {
+        "image": "6cb6b49afac2e3bbde533554a6b2e50b.jpg",
+        "upload": "image"
+      }
+    },
+    {
+      "id": 5,
+      "type": "ImageScaleToTotalPixels",
+      "pos": [
+        470,
+        610
+      ],
+      "size": [
+        380,
+        145
+      ],
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "图像",
+          "name": "image",
+          "type": "IMAGE",
+          "link": 2
+        },
+        {
+          "localized_name": "缩放算法",
+          "name": "upscale_method",
+          "type": "COMBO",
+          "widget": {
+            "name": "upscale_method"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "像素数量",
+          "name": "megapixels",
+          "type": "FLOAT",
+          "widget": {
+            "name": "megapixels"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "分辨率步数",
+          "name": "resolution_steps",
+          "type": "INT",
+          "widget": {
+            "name": "resolution_steps"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "图像",
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            3,
+            4
+          ]
+        }
+      ],
+      "title": "② 保持原图比例 · 约100万像素",
+      "properties": {
+        "Node name for S&R": "ImageScaleToTotalPixels",
+        "cnr_id": "comfy-core",
+        "ver": "0.43.0"
+      },
+      "widgets_values": [
+        "lanczos",
+        1,
+        16
+      ],
+      "widgets_values_named": {
+        "upscale_method": "lanczos",
+        "megapixels": 1,
+        "resolution_steps": 16
+      }
+    },
+    {
+      "id": 6,
+      "type": "GetImageSize",
+      "pos": [
+        470,
+        840
+      ],
+      "size": [
+        380,
+        124
+      ],
+      "flags": {},
+      "order": 9,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "图像",
+          "name": "image",
+          "type": "IMAGE",
+          "link": 3
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "宽度",
+          "name": "width",
+          "type": "INT",
+          "links": [
+            10,
+            12
+          ]
+        },
+        {
+          "localized_name": "高度",
+          "name": "height",
+          "type": "INT",
+          "links": [
+            11,
+            13
+          ]
+        },
+        {
+          "localized_name": "批处理大小",
+          "name": "batch_size",
+          "type": "INT",
+          "links": []
+        }
+      ],
+      "title": "自动读取宽高 · 不用手填",
+      "properties": {
+        "Node name for S&R": "GetImageSize",
+        "cnr_id": "comfy-core",
+        "ver": "0.43.0"
+      }
+    },
+    {
+      "id": 7,
+      "type": "VAEEncode",
+      "pos": [
+        470,
+        1010
+      ],
+      "size": [
+        380,
+        90
+      ],
+      "flags": {},
+      "order": 10,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "像素",
+          "name": "pixels",
+          "type": "IMAGE",
+          "link": 4
+        },
+        {
+          "localized_name": "vae",
+          "name": "vae",
+          "type": "VAE",
+          "link": 5
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "Latent",
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": [
+            7
+          ]
+        }
+      ],
+      "title": "参考图编码",
+      "properties": {
+        "Node name for S&R": "VAEEncode",
+        "cnr_id": "comfy-core",
+        "ver": "0.43.0"
+      }
+    },
+    {
+      "id": 8,
+      "type": "CLIPTextEncode",
+      "pos": [
+        910,
+        140
+      ],
+      "size": [
+        480,
+        300
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "clip",
+          "name": "clip",
+          "type": "CLIP",
+          "link": 1
+        },
+        {
+          "localized_name": "文本",
+          "name": "text",
+          "type": "STRING",
+          "widget": {
+            "name": "text"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "条件",
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "links": [
+            6
+          ]
+        }
+      ],
+      "title": "③ 编辑指令 · 写清只改什么、保留什么",
+      "properties": {
+        "Node name for S&R": "CLIPTextEncode",
+        "cnr_id": "comfy-core",
+        "ver": "0.43.0"
+      },
+      "widgets_values": [
+        "保留原图主体、外观和构图，将背景改为简洁的浅灰色摄影棚，自然柔和的光线，保留服装与细节。"
+      ],
+      "widgets_values_named": {
+        "text": "保持原图的面部特征、姿态、和主要配色，在此基础上将图中的男生拓展生成全身，裸体，手放在阴茎上撸动"
+      }
+    },
+    {
+      "id": 9,
+      "type": "ReferenceLatent",
+      "pos": [
+        910,
+        520
+      ],
+      "size": [
+        480,
+        100
+      ],
+      "flags": {},
+      "order": 13,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "条件",
+          "name": "conditioning",
+          "type": "CONDITIONING",
+          "link": 6
+        },
+        {
+          "localized_name": "Latent",
+          "name": "latent",
+          "shape": 7,
+          "type": "LATENT",
+          "link": 7
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "条件",
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "links": [
+            9
+          ]
+        }
+      ],
+      "title": "把原图加入编辑条件",
+      "properties": {
+        "Node name for S&R": "ReferenceLatent",
+        "cnr_id": "comfy-core",
+        "ver": "0.43.0"
+      }
+    },
+    {
+      "id": 10,
+      "type": "BasicGuider",
+      "pos": [
+        910,
+        700
+      ],
+      "size": [
+        480,
+        100
+      ],
+      "flags": {},
+      "order": 14,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "模型",
+          "name": "model",
+          "type": "MODEL",
+          "link": 8
+        },
+        {
+          "localized_name": "条件",
+          "name": "conditioning",
+          "type": "CONDITIONING",
+          "link": 9
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "引导器",
+          "name": "GUIDER",
+          "type": "GUIDER",
+          "links": [
+            15
+          ]
+        }
+      ],
+      "title": "引导器 · 蒸馏版使用单条件",
+      "properties": {
+        "Node name for S&R": "BasicGuider",
+        "cnr_id": "comfy-core",
+        "ver": "0.43.0"
+      }
+    },
+    {
+      "id": 11,
+      "type": "KSamplerSelect",
+      "pos": [
+        1450,
+        320
+      ],
+      "size": [
+        340,
+        90
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "采样器名称",
+          "name": "sampler_name",
+          "type": "COMBO",
+          "widget": {
+            "name": "sampler_name"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "采样器",
+          "name": "SAMPLER",
+          "type": "SAMPLER",
+          "links": [
+            16
+          ]
+        }
+      ],
+      "title": "采样器 · 保持euler",
+      "properties": {
+        "Node name for S&R": "KSamplerSelect",
+        "cnr_id": "comfy-core",
+        "ver": "0.43.0"
+      },
+      "widgets_values": [
+        "euler"
+      ],
+      "widgets_values_named": {
+        "sampler_name": "euler"
+      }
+    },
+    {
+      "id": 12,
+      "type": "Flux2Scheduler",
+      "pos": [
+        1450,
+        490
+      ],
+      "size": [
+        340,
+        145
+      ],
+      "flags": {},
+      "order": 11,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "步数",
+          "name": "steps",
+          "type": "INT",
+          "widget": {
+            "name": "steps"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "宽度",
+          "name": "width",
+          "type": "INT",
+          "widget": {
+            "name": "width"
+          },
+          "link": 10
+        },
+        {
+          "localized_name": "高度",
+          "name": "height",
+          "type": "INT",
+          "widget": {
+            "name": "height"
+          },
+          "link": 11
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "Sigmas",
+          "name": "SIGMAS",
+          "type": "SIGMAS",
+          "links": [
+            17
+          ]
+        }
+      ],
+      "title": "④ FLUX.2调度 · 默认4步",
+      "properties": {
+        "Node name for S&R": "Flux2Scheduler",
+        "cnr_id": "comfy-core",
+        "ver": "0.43.0"
+      },
+      "widgets_values": [
+        4,
+        1024,
+        1024
+      ],
+      "widgets_values_named": {
+        "steps": 4,
+        "width": 1024,
+        "height": 1024
+      }
+    },
+    {
+      "id": 13,
+      "type": "RandomNoise",
+      "pos": [
+        1450,
+        140
+      ],
+      "size": [
+        340,
+        110
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "噪波随机种",
+          "name": "noise_seed",
+          "type": "INT",
+          "widget": {
+            "name": "noise_seed"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "噪波",
+          "name": "NOISE",
+          "type": "NOISE",
+          "links": [
+            14
+          ]
+        }
+      ],
+      "title": "种子 · 固定便于对比",
+      "properties": {
+        "Node name for S&R": "RandomNoise",
+        "cnr_id": "comfy-core",
+        "ver": "0.43.0"
+      },
+      "widgets_values": [
+        42,
+        "fixed"
+      ],
+      "widgets_values_named": {
+        "noise_seed": 42,
+        "control_after_generate": "fixed"
+      }
+    },
+    {
+      "id": 14,
+      "type": "EmptyFlux2LatentImage",
+      "pos": [
+        1450,
+        730
+      ],
+      "size": [
+        340,
+        140
+      ],
+      "flags": {},
+      "order": 12,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "width",
+          "name": "width",
+          "type": "INT",
+          "widget": {
+            "name": "width"
+          },
+          "link": 12
+        },
+        {
+          "localized_name": "height",
+          "name": "height",
+          "type": "INT",
+          "widget": {
+            "name": "height"
+          },
+          "link": 13
+        },
+        {
+          "localized_name": "batch_size",
+          "name": "batch_size",
+          "type": "INT",
+          "widget": {
+            "name": "batch_size"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "Latent",
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": [
+            18
+          ]
+        }
+      ],
+      "title": "输出尺寸跟随原图 · 单张",
+      "properties": {
+        "Node name for S&R": "EmptyFlux2LatentImage",
+        "cnr_id": "comfy-core",
+        "ver": "0.43.0"
+      },
+      "widgets_values": [
+        1024,
+        1024,
+        1
+      ],
+      "widgets_values_named": {
+        "width": 1024,
+        "height": 1024,
+        "batch_size": 1
+      }
+    },
+    {
+      "id": 15,
+      "type": "SamplerCustomAdvanced",
+      "pos": [
+        1450,
+        960
+      ],
+      "size": [
+        340,
+        326
+      ],
+      "flags": {},
+      "order": 15,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "噪波",
+          "name": "noise",
+          "type": "NOISE",
+          "link": 14
+        },
+        {
+          "localized_name": "引导器",
+          "name": "guider",
+          "type": "GUIDER",
+          "link": 15
+        },
+        {
+          "localized_name": "采样器",
+          "name": "sampler",
+          "type": "SAMPLER",
+          "link": 16
+        },
+        {
+          "localized_name": "西格玛",
+          "name": "sigmas",
+          "type": "SIGMAS",
+          "link": 17
+        },
+        {
+          "localized_name": "Latent图像",
+          "name": "latent_image",
+          "type": "LATENT",
+          "link": 18
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "Latent",
+          "name": "output",
+          "type": "LATENT",
+          "links": [
+            19
+          ]
+        },
+        {
+          "localized_name": "降噪Latent",
+          "name": "denoised_output",
+          "type": "LATENT",
+          "links": []
+        }
+      ],
+      "title": "⑤ 参考图编辑采样",
+      "properties": {
+        "Node name for S&R": "SamplerCustomAdvanced",
+        "cnr_id": "comfy-core",
+        "ver": "0.43.0"
+      },
+      "widgets_values": [],
+      "widgets_values_named": {}
+    },
+    {
+      "id": 16,
+      "type": "VAEDecode",
+      "pos": [
+        1850,
+        140
+      ],
+      "size": [
+        390,
+        100
+      ],
+      "flags": {},
+      "order": 16,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "Latent",
+          "name": "samples",
+          "type": "LATENT",
+          "link": 19
+        },
+        {
+          "localized_name": "vae",
+          "name": "vae",
+          "type": "VAE",
+          "link": 20
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "图像",
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            21
+          ]
+        }
+      ],
+      "title": "⑥ 解码编辑结果",
+      "properties": {
+        "Node name for S&R": "VAEDecode",
+        "cnr_id": "comfy-core",
+        "ver": "0.43.0"
+      }
+    },
+    {
+      "id": 17,
+      "type": "SaveImage",
+      "pos": [
+        1850,
+        340
+      ],
+      "size": [
+        390,
+        660
+      ],
+      "flags": {},
+      "order": 17,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "图片",
+          "name": "images",
+          "type": "IMAGE",
+          "link": 21
+        },
+        {
+          "localized_name": "文件名前缀",
+          "name": "filename_prefix",
+          "type": "STRING",
+          "widget": {
+            "name": "filename_prefix"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "images",
+          "name": "images",
+          "type": "IMAGE",
+          "links": []
+        }
+      ],
+      "title": "⑦ 保存与预览 · 自动编号",
+      "properties": {
+        "Node name for S&R": "SaveImage",
+        "cnr_id": "comfy-core",
+        "ver": "0.43.0"
+      },
+      "widgets_values": [
+        "flux_klein_edit/FLUX-Klein"
+      ],
+      "widgets_values_named": {
+        "filename_prefix": "flux_klein_edit/FLUX-Klein"
+      }
+    },
+    {
+      "id": 18,
+      "type": "Note",
+      "pos": [
+        910,
+        900
+      ],
+      "size": [
+        480,
+        240
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "title": "新手操作与示例",
+      "properties": {},
+      "widgets_values": [
+        "此副本用于我的 AIGC。原始工作流保留在 ComfyUI 中。"
+      ],
+      "widgets_values_named": {
+        "text": "1. 上传原图，再改编辑指令，点击运行。\n2. 当前示例：只把红围巾改成蓝绿色，保留人物和背景。\n3. 指令可用中文；不准确时尝试简洁英文。\n4. 8GB显存：默认1.0百万像素、一次1张；吃紧先降到0.75。\n5. 蒸馏版默认4步；没有普通图生图的降噪旋钮。\n6. 新空Latent用于生成结果；原图通过参考条件接入。\n普通参考图编辑也可能改变脸、手部和其他局部细节。"
+      },
+      "color": "#293b48",
+      "bgcolor": "#1d2a33"
+    }
+  ],
+  "links": [
+    [
+      1,
+      2,
+      0,
+      8,
+      0,
+      "CLIP"
+    ],
+    [
+      2,
+      4,
+      0,
+      5,
+      0,
+      "IMAGE"
+    ],
+    [
+      3,
+      5,
+      0,
+      6,
+      0,
+      "IMAGE"
+    ],
+    [
+      4,
+      5,
+      0,
+      7,
+      0,
+      "IMAGE"
+    ],
+    [
+      5,
+      3,
+      0,
+      7,
+      1,
+      "VAE"
+    ],
+    [
+      6,
+      8,
+      0,
+      9,
+      0,
+      "CONDITIONING"
+    ],
+    [
+      7,
+      7,
+      0,
+      9,
+      1,
+      "LATENT"
+    ],
+    [
+      8,
+      1,
+      0,
+      10,
+      0,
+      "MODEL"
+    ],
+    [
+      9,
+      9,
+      0,
+      10,
+      1,
+      "CONDITIONING"
+    ],
+    [
+      12,
+      6,
+      0,
+      14,
+      0,
+      "INT"
+    ],
+    [
+      13,
+      6,
+      1,
+      14,
+      1,
+      "INT"
+    ],
+    [
+      14,
+      13,
+      0,
+      15,
+      0,
+      "NOISE"
+    ],
+    [
+      15,
+      10,
+      0,
+      15,
+      1,
+      "GUIDER"
+    ],
+    [
+      16,
+      11,
+      0,
+      15,
+      2,
+      "SAMPLER"
+    ],
+    [
+      17,
+      12,
+      0,
+      15,
+      3,
+      "SIGMAS"
+    ],
+    [
+      18,
+      14,
+      0,
+      15,
+      4,
+      "LATENT"
+    ],
+    [
+      19,
+      15,
+      0,
+      16,
+      0,
+      "LATENT"
+    ],
+    [
+      20,
+      3,
+      0,
+      16,
+      1,
+      "VAE"
+    ],
+    [
+      21,
+      16,
+      0,
+      17,
+      0,
+      "IMAGE"
+    ],
+    [
+      10,
+      6,
+      0,
+      12,
+      1,
+      "INT"
+    ],
+    [
+      11,
+      6,
+      1,
+      12,
+      2,
+      "INT"
+    ]
+  ],
+  "groups": [
+    {
+      "id": 1,
+      "title": "模型加载区 · 免费本地FP8",
+      "bounding": [
+        40,
+        50,
+        390,
+        700
+      ],
+      "color": "#3f789e",
+      "flags": {}
+    },
+    {
+      "id": 2,
+      "title": "原图输入区 · 保持比例",
+      "bounding": [
+        450,
+        50,
+        420,
+        1110
+      ],
+      "color": "#3f789e",
+      "flags": {}
+    },
+    {
+      "id": 3,
+      "title": "编辑指令区 · 参考图引导",
+      "bounding": [
+        890,
+        50,
+        520,
+        1150
+      ],
+      "color": "#3f789e",
+      "flags": {}
+    },
+    {
+      "id": 4,
+      "title": "采样区 · 5060 8GB / 单张",
+      "bounding": [
+        1430,
+        50,
+        380,
+        1130
+      ],
+      "color": "#3f789e",
+      "flags": {}
+    },
+    {
+      "id": 5,
+      "title": "结果保存区",
+      "bounding": [
+        1830,
+        50,
+        430,
+        1030
+      ],
+      "color": "#3f789e",
+      "flags": {}
+    }
+  ],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 1.1595672000000041,
+      "offset": [
+        -511.84268064489174,
+        27.290793443569186
+      ]
+    },
+    "workflowRendererVersion": "LG"
+  },
+  "version": 0.4
+}

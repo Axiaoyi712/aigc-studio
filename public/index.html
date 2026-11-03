@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="description" content="在自己的电脑上，用图片和工作流完成视频创作。">
+  <title>我的 AIGC · 本地创作台</title>
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/projects.css">
+  <link rel="stylesheet" href="/production.css">
+  <link rel="stylesheet" href="/prompts.css">
+  <script src="/app.js" type="module"></script>
+</head>
+<body>
+  <aside class="sidebar">
+    <a class="brand" href="/" aria-label="我的 AIGC 首页"><img src="/icon.svg" width="38" height="38" alt=""><span id="brand-name">我的 AIGC<small>PERSONAL CREATIVE STUDIO</small></span></a>
+    <div class="nav-label">创作空间</div>
+    <nav aria-label="主导航">
+      <button class="nav-item" data-section="prompts" aria-label="提示词库"><span class="nav-icon">✦</span> 提示词库 <span class="nav-index">LIB</span></button>
+      <button class="nav-item" data-section="projects" aria-label="镜头项目"><span class="nav-icon">▤</span> 镜头项目 <span class="nav-index">NEW</span></button>
+      <button class="nav-item selected" data-section="video" aria-label="视频创作"><span class="nav-icon">▷</span> 视频创作 <span class="nav-index">01</span></button>
+      <button class="nav-item" data-section="image" aria-label="图片创作"><span class="nav-icon">▧</span> 图片创作 <span class="nav-index">02</span></button>
+      <button class="nav-item" data-section="reference" aria-label="人物参考"><span class="nav-icon">◉</span> 人物参考 <span class="nav-index">03</span></button>
+      <button class="nav-item" data-section="works" aria-label="我的作品"><span class="nav-icon">▦</span> 我的作品 <span class="nav-index">04</span></button>
+    </nav>
+    <div class="sidebar-bottom">
+      <button class="roadmap-link" id="show-roadmap">制作路线 <span>↗</span></button>
+      <div class="local-card"><span class="status-dot" id="side-dot"></span><div>本机工作空间<small id="gpu-name">正在连接生成引擎</small></div></div>
+      <div class="version">LOCAL EDITION <span>v0.5</span></div>
+    </div>
+  </aside>
+  <main>
+    <header class="topbar"><div class="breadcrumb">工作空间 <span>/</span> <strong id="breadcrumb">视频创作</strong></div><div class="connection"><span class="status-dot" id="connection-dot"></span><span id="connection-text">连接中</span><button id="reconnect" title="重新检查 ComfyUI 连接" aria-label="重新连接">↻</button></div></header>
+    <div class="page">
+      <section class="page-heading"><div><p class="eyebrow">YOUR IDEAS, IN MOTION</p><h1 id="page-title">让想象，开始流动<span>。</span></h1><p id="page-subtitle">从一张图片出发，完成属于你的下一段影像。</p></div><span class="edition">本地生成 <span>↗</span></span></section>
+      <div class="notice" id="connection-notice" hidden></div>
+      <div class="notice success" id="notice" role="status" hidden></div>
+      <section id="projects-panel" hidden></section>
+      <section id="prompts-panel" hidden></section>
+      <section id="create-panel" class="workspace">
+        <form id="create-form" class="control-panel">
+          <div class="panel-label"><span>创作设置</span><small>01 — CREATE</small></div>
+          <label class="field-label" for="template">选择工作流</label>
+          <select id="template" name="template" required></select>
+          <p class="field-help" id="template-description">正在读取工作流…</p>
+          <div id="video-options" class="video-option-grid"></div><p class="field-help" id="video-option-help">固定比例会居中裁切首帧。运镜和动作属于提示词引导，效果以生成为准；较长片段建议先用预览规格试做。</p>
+          <div id="uploads"></div>
+          <button type="button" class="project-button" id="choose-prompt">从提示词库选择 ✦</button>
+          <label class="field-label" for="prompt">画面与动作描述 <span class="optional">可使用中文或英文</span></label>
+          <textarea id="prompt" name="prompt" rows="5" maxlength="6000" required placeholder="描述主体的动作、镜头和环境声音…"></textarea>
+          <div class="prompt-tools"><button type="button" id="reset-prompt">↺ 恢复示例描述</button><span id="prompt-count">0 / 6000</span></div>
+          <details id="final-prompt-preview"><summary>查看将提交的完整提示词</summary><pre id="composed-prompt"></pre></details>
+          <div class="form-row" id="size-row"><div class="grow"><label class="field-label" for="size">输出尺寸</label><select id="size"><option value="512x512">512 × 512 · 方形</option><option value="768x1024">768 × 1024 · 竖版</option><option value="1024x768">1024 × 768 · 横版</option><option value="2048x2048">2048 × 2048 · 方形 2K</option><option value="1536x2048">1536 × 2048 · 竖版 2K</option><option value="2048x1536">2048 × 1536 · 横版 2K</option></select><p class="field-help">2K 按长边 2048 像素设置，需要更多显存和生成时间。</p></div></div>
+          <details class="advanced"><summary>高级设置 <span>＋</span></summary><label class="field-label" for="seed">随机种子</label><input id="seed" type="number" min="0" max="9007199254740991" step="1" placeholder="留空，每次随机"><p class="field-help">填写相同种子方便对比；种子本身不能保证人物一致。</p></details>
+          <div class="specs" id="video-specs"><span>约 5.17 秒</span><span>24 FPS</span><span>跟随首帧比例</span></div>
+          <div class="notice compact" id="template-issues" hidden></div>
+          <button class="primary" id="generate" type="submit" disabled><span id="generate-label">开始生成视频</span><span aria-hidden="true">↗</span></button>
+          <p class="submit-help" id="submit-help">首次加载模型可能较慢，请保持 ComfyUI 运行。</p>
+        </form>
+        <section class="preview-panel" aria-label="生成结果">
+          <div class="panel-label"><span>创作预览</span><small>02 — PREVIEW</small></div>
+          <div id="preview" class="preview-area"><div class="empty-state"><div class="frame-symbol"><span>▷</span></div><h2>下一帧，由你创造</h2><p>上传首帧，描述动作<br>你的第一段作品将在这里出现</p><div class="empty-tags"><span>图片输入</span><i>→</i><span>视频生成</span></div></div></div>
+          <div class="task-status" id="task-status" hidden aria-live="polite"></div>
+          <div class="preview-footer"><span><i></i>素材与成品保存在本机</span><span id="preview-footer-text">IMAGE → VIDEO</span></div>
+        </section>
+      </section>
+      <section class="recent-section"><div class="section-heading"><div><h2 id="recent-title">最近作品</h2><p id="recent-description">每一次创作，都留有记录。</p></div><button class="text-button" id="view-all">查看全部 <span>↗</span></button></div><div id="works-selection" class="works-selection" hidden><label><input type="checkbox" id="select-all-works">全选可删除作品</label><span id="selected-works-count" role="status" aria-live="polite">已选择 0 项</span><button type="button" id="clear-work-selection" disabled>取消选择</button><button type="button" id="delete-selected-works" disabled>删除所选（0）</button></div><div id="jobs" class="jobs-grid"><div class="empty-library">还没有作品。完成一次生成后，成品与参数会保存在这里。</div></div></section>
+      <footer class="page-footer"><span>你的工作流，你的创作空间。</span><span>由本机 ComfyUI 执行生成</span></footer>
+    </div>
+  </main>
+  <dialog id="roadmap-dialog"><div class="dialog-heading"><h2>制作路线与使用说明</h2><button id="close-roadmap" aria-label="关闭制作路线">×</button></div><pre id="roadmap-content">正在读取…</pre></dialog>
+</body>
+</html>
