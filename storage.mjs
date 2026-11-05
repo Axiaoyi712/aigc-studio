@@ -40,5 +40,5 @@ export function createStorage(config,state,dataRoot){
   if(m[1]==='assets'){const a=state.assets.find(a=>a.id===m[2]),file=Object.values(a?.projectFiles||{})[0]||a?.libraryFile;if(file)path=resolve(config.comfyRoot,'output',file,'..');}
   if(!path||!existsSync(path))throw Object.assign(Error('文件夹不存在。'),{status:404});const child=spawn('explorer.exe',[path],{windowsHide:true,stdio:'ignore'});child.on('error',()=>{});child.unref();send(res,200,{path});return true;
  }
- return {sync,prefix,imageName,handle,root};
+ return {sync,prefix,imageName,handle,root,projectFolder};
 }

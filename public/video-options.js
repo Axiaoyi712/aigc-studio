@@ -7,6 +7,7 @@ export function normalizeVideoOptions(value = {}) {
   if (!Object.hasOwn(videoDurations, video.frames)) throw Error('请选择提供的视频时长。');
   if (!['draft', 'standard', 'high'].includes(video.profile) || !['source', 'square', 'portrait', 'landscape'].includes(video.aspect) || !['keep', 'mute'].includes(video.sound)) throw Error('视频规格无效。');
   if (!Object.hasOwn(cameras, video.camera) || !Object.hasOwn(actions, video.action) || !Object.hasOwn(styles, video.style) || !['none', 'close', 'medium', 'wide'].includes(video.shot) || !['none', 'slow', 'normal'].includes(video.pace)) throw Error('视频提示词选项无效。');
+  if(value.delivery!==undefined){if(!['native','720p','1080p'].includes(value.delivery))throw Error('成片清晰度无效。');video.delivery=value.delivery;}
   return video;
 }
 export function videoCanvas(video) {

@@ -29,6 +29,7 @@ function renderVideoOptions() {
     optionSelect('aspect', '画面比例', ref?{square:'方形 1:1',portrait:'竖版',landscape:'横版'}:{ source: '跟随首帧', square: '方形 1:1', portrait: '竖版', landscape: '横版' }, ref?'landscape':'source'),
     optionSelect('profile', '生成分辨率', ref?{draft:'省显存 · 实验'}:videoProfileLabels({ frames: 124, aspect: 'source' }), ref?'draft':'standard'),
     optionSelect('sound', '输出声音', { keep: '保留模型声音', mute: '静音视频' }, 'keep'),
+    optionSelect('delivery','成片清晰度',{'720p':'至少720p · 自动AI精修','1080p':'至少1080p · 自动AI精修',native:'原始生成（不自动精修）'},'720p'),
     optionSelect('camera', '镜头运动', cameras, 'static'), optionSelect('action', '主体动作', actions, 'blink'),
     optionSelect('style', '视觉风格', styles, 'preserve'), optionSelect('shot', '景别', { none: '保持原构图', close: '特写', medium: '中景', wide: '远景' }, 'none'),
     optionSelect('pace', '运动节奏', { none: '由描述决定', slow: '缓慢克制', normal: '自然节奏' }, 'slow')

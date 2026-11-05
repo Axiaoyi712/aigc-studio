@@ -17,7 +17,7 @@ export function normalizeProduction(value = {}, assets = []) {
   result.frameQuality=value.frameQuality??'standard';
   result.frameAspect=value.frameAspect??'video';
   result.exportSize=value.exportSize??'1280x720';
-  if(!['preview','standard','high'].includes(result.frameQuality)||!['video','square','landscape','portrait'].includes(result.frameAspect)||!['1280x720','720x1280','768x768','1920x1080','1080x1920'].includes(result.exportSize))throw Error('项目画幅或质量无效。');
+  if(!['preview','standard','high'].includes(result.frameQuality)||!['video','square','landscape','portrait'].includes(result.frameAspect)||!['1280x720','720x1280','768x768','1920x1080','1080x1920','720x960','960x720','1080x1440','1440x1080'].includes(result.exportSize))throw Error('项目画幅或质量无效。');
   result.referenceIds=value.referenceIds??[];
   if(!Array.isArray(result.referenceIds)||new Set(result.referenceIds).size!==result.referenceIds.length||result.referenceIds.some(id=>!assets.some(asset=>asset.id===id)))throw Error('项目参考素材无效。');
   result.referenceNotes={};

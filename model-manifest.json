@@ -189,5 +189,20 @@
         }
       ]
     }
-  ]
+  ],
+  "depthControl": {
+    "optional": true,
+    "file": "minimax_h3_fun_controlnet_union_pruned_int8_convrot.safetensors",
+    "directory": "models/model_patches",
+    "bytes": 2296635360,
+    "sha256": "9c645c0a308c8af361efd43b409710f6f8fec0db297c29503e141a84991fed0c",
+    "source": "https://huggingface.co/Kijai/MiniMax-H3-experimental/blob/main/model_patches/minimax_h3_fun_controlnet_union_pruned_int8_convrot.safetensors",
+    "nodes": [
+      "LoadVideo",
+      "GetVideoComponents",
+      "ModelPatchLoader",
+      "MiniMaxH3FunControlNetApply",
+      "ImageFromBatch"
+    ]
+  }
 }

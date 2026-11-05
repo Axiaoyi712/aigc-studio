@@ -14,6 +14,7 @@ templates.splice(2, 0, { ...templates[0], id: 'h3-keyframes', name: 'H3 · 首�
 templates.push({ ...templates.find(item => item.id === 'flux-3ref'), id: 'flux-2ref', name: 'FLUX Klein · 双图参考', source: null, images: 2, description: '两张独立参考 · 按描述生成同场或不同视角首帧', defaultPrompt: '依据参考图保留角色五官、发型、服装和体型，按描述安排人物与场景，不互换不同角色的身份。' });
 templates.push({ ...templates.find(item => item.id === 'flux-3ref'), id: 'flux-multi', name: 'FLUX Klein · 多图参考（4～20张）', source: null, images: 4, maxImages: 20, internal: true, description: '项目首帧多图参考 · 最多二十张独立图片' });
 templates.push({...templates.find(item=>item.id==='h3-base'),id:'h3-reference',name:'H3 · 多参考 20 步 · 实验',source:null,images:1,maxImages:4,experimental:true,description:'独立 Ref2VA 权重 · 项目中使用角色/场景参考与分镜图 · 首帧不强制对齐',defaultPrompt:'依据参考图中的主体身份、外观与场景，生成自然连贯的短镜头。'});
+templates.push({...templates.find(item=>item.id==='h3-base'),id:'h3-depth',name:'H3 · 白膜深度驱动 · 实验',source:null,internal:true,description:'已确认首帧＋逐帧深度控制；正式输出至少720p'});
 
 const widgets = {
   UNETLoader: ['unet_name', 'weight_dtype'], CLIPLoader: ['clip_name', 'type', 'device'],
@@ -46,7 +47,8 @@ export function parseRequest(input) {
   if (template.section === 'video') {
     const video = normalizeVideoOptions(input.video);
     if(template.id==='h3-reference'&&(video.frames>124||video.profile!=='draft'||video.aspect==='source'))throw new Error('本机多参考实验路径仅支持约 3～5 秒、省显存档，并需明确选择横版、竖版或方形。');
-    return { template: template.id, prompt: input.video ? composeVideoPrompt(prompt, video) : prompt, sourcePrompt: prompt, images, seed, size, video };
+    if(template.id==='h3-depth'&&typeof input.driverClipId!=='string')throw Error('请选择已准备的驱动片段。');
+    return { template: template.id, prompt: input.video ? composeVideoPrompt(prompt, video) : prompt, sourcePrompt: prompt, images, seed, size, video,...(template.id==='h3-depth'?{driverClipId:input.driverClipId}:{}) };
   }
   return { template: template.id, prompt, images, seed, size };
 }
@@ -100,6 +102,19 @@ export function compileGraph(graph, input, jobId) {
     }
     if (video?.sound === 'mute' && node.type === 'CreateVideo') delete inputs.audio;
     prompt[node.id] = { class_type: node.type, inputs };
+  }
+  if(template.id==='h3-depth'){
+    const c=input.driver;
+    if(!c||!Number.isInteger(c.frames)||c.frames<39||c.frames>141||(c.frames-5)%17||!Number.isInteger(c.effectiveFrames)||c.effectiveFrames<1||c.effectiveFrames>c.frames||![c.width,c.height].every(v=>Number.isInteger(v)&&v>=64&&v<=1536&&v%32===0))throw Error('驱动片段规格无效。');
+    prompt['7']={class_type:'ImageScale',inputs:{image:['6',0],upscale_method:'lanczos',width:c.width,height:c.height,crop:'disabled'}};
+    prompt['9'].inputs.length=c.frames;
+    prompt.depth_load={class_type:'LoadVideo',inputs:{file:c.file+' [output]'}};
+    prompt.depth_components={class_type:'GetVideoComponents',inputs:{video:['depth_load',0]}};
+    prompt.depth_patch={class_type:'ModelPatchLoader',inputs:{name:'minimax_h3_fun_controlnet_union_pruned_int8_convrot.safetensors'}};
+    prompt.depth_control={class_type:'MiniMaxH3FunControlNetApply',inputs:{model:['1',0],model_patch:['depth_patch',0],vae:['3',0],strength:1,start_percent:0,end_percent:1,control_video:['depth_components',0]}};
+    prompt['10'].inputs.model=['depth_control',0];prompt['13'].inputs.model=['depth_control',0];
+    prompt.depth_trim={class_type:'ImageFromBatch',inputs:{image:['15',0],batch_index:0,length:c.effectiveFrames}};
+    prompt['17'].inputs.images=['depth_trim',0];delete prompt['17'].inputs.audio;
   }
   if (template.id === 'h3-keyframes') {
     prompt.last_frame_image = { class_type: 'LoadImage', inputs: { image: input.images[1] } };
@@ -156,7 +171,7 @@ export function checkGraph(prompt, info) {
         const output = info[source.class_type]?.output?.[value[1]];
         const expected = definition[0];
         if (typeof expected === 'string' && !['COMBO', 'COMFY_DYNAMICCOMBO_V3'].includes(expected) && output !== expected) errors.push(`${id}.${name} 的连接类型不符：${output} / ${expected}`);
-      } else if (Array.isArray(definition[0]) && !definition[0].includes(value) && node.class_type !== 'LoadImage') {
+      } else if (Array.isArray(definition[0]) && !definition[0].includes(value) && !['LoadImage','LoadVideo'].includes(node.class_type)) {
         errors.push(`${id}.${name} 的模型或选项不可用：${value}`);
       }
     }

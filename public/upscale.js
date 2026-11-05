@@ -1,9 +1,10 @@
 const h=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export function upscaleMarkup(video,jobs){
+ if(video?.deliveryStatus==='failed')return `<p class="notice error">高清成片未完成：${h(video.deliveryError||'请重试精修')}。原片保留。</p><button type="button" class="project-button" data-upscale="${video.id}">重试高清精修1080p</button>`;
  if(video?.status!=='success'||video.outputs?.[0]?.kind!=='video')return '';
  const refinement=video.enhancement?video:jobs.find(j=>j.sourceVideoJobId===video.id&&j.enhancement);
  if(refinement?.status==='running')return `<p class="field-help">高清精修中 · ${refinement.progress?.value||0} / ${refinement.progress?.max||'…'} 帧</p><button type="button" class="project-button" data-stop-upscale="${refinement.id}">停止精修</button>`;
- return `${refinement?.status==='failed'?'<p class="field-help">上次精修未完成，可重试；详情见我的作品。</p>':''}${!video.enhancement?`<button type="button" class="project-button" data-upscale="${video.id}">高清精修1080p</button>`:''}${refinement?.status==='success'?`<button type="button" class="project-button" data-upscale-compare="${refinement.id}">原片／高清对比</button>`:''}`;
+ return `${video.deliveryStatus==='running'||(!video.deliveryStatus&&['720p','1080p'].includes(video.video?.delivery)&&!video.enhancement)?'<p class="field-help">原片已生成，等待高清成片；完成后项目自动选用高清版。</p>':''}${video.enhancement?`<p class="field-help">AI精修${h(video.enhancement.target)} · 原生${video.enhancement.nativeWidth||'—'}×${video.enhancement.nativeHeight||'—'} → 成片${video.outputs[0]?.metadata?.width||'—'}×${video.outputs[0]?.metadata?.height||'—'}</p>`:''}${refinement?.status==='failed'?'<p class="field-help">上次精修未完成，可重试；详情见我的作品。</p>':''}${!video.enhancement&&video.deliveryStatus!=='running'?`<button type="button" class="project-button" data-upscale="${video.id}">高清精修1080p</button>`:''}${refinement?.status==='success'?`<button type="button" class="project-button" data-upscale-compare="${refinement.id}">原片／高清对比</button>`:''}`;
 }
 export async function upscaleClick(button,api,reload){
  if(button.dataset.upscale){await api('/api/jobs/'+button.dataset.upscale+'/upscale',{});await reload();return true;}
