@@ -31,6 +31,7 @@
 .driver-import-tabs button[aria-pressed=true]{border-color:#718c4d;background:#2c3624;color:var(--accent)}
 .driver-source-row{display:flex;gap:10px;align-items:stretch;margin-top:8px}.driver-source-row input{flex:1;width:0;margin:0}.driver-source-row button{flex-shrink:0}
 .driver-studio .driver-help{font-size:12px;line-height:1.75;color:var(--muted);margin:10px 0 0}
+.driver-studio .driver-import-guidance{overflow-wrap:anywhere}.driver-studio .driver-import-guidance.is-needed{color:#e2cd98}
 .driver-existing{border-top:1px solid var(--line);margin-top:20px;padding-top:18px}
 .driver-choice-group{border:0;padding:0;margin:0;min-width:0}
 .driver-choice-group legend{font-size:13px;margin-bottom:12px;padding:0;color:#d9e1d6}.driver-choice-group legend span{font-size:11px;color:var(--muted);margin-left:8px}

@@ -11,13 +11,14 @@ function resetCreated(){created=null;$('#driver-success').hidden=true;}
 function mount(){
  host=document.querySelector('#driver-studio');
  host.innerHTML=`<ol class="driver-steps" aria-label="白膜视频制作流程"><li><b>1</b><span>导入白膜视频<small>选择动作来源</small></span></li><li><b>2</b><span>设置片段与画质<small>先试一个短镜头</small></span></li><li><b>3</b><span>创建镜头，继续生成<small>人物与场景在下一步设置</small></span></li></ol>
- <div class="driver-project-bar"><label for="driver-project">保存到项目<select id="driver-project"><option value="">正在读取项目…</option></select></label><button type="button" class="driver-button" id="driver-new-toggle" aria-expanded="false" aria-controls="driver-new-form">＋ 新建项目</button><div id="driver-new-form" class="driver-new-form" hidden><label for="driver-project-name">项目名称<input id="driver-project-name" maxlength="80" placeholder="例如：餐厅对话短剧"></label><button type="button" class="driver-button" id="driver-new">创建项目</button></div></div>
+ <div class="driver-project-bar"><label for="driver-project">保存到项目（必选）<select id="driver-project"><option value="">正在读取项目…</option></select></label><button type="button" class="driver-button" id="driver-new-toggle" aria-expanded="false" aria-controls="driver-new-form">＋ 新建项目</button><div id="driver-new-form" class="driver-new-form" hidden><label for="driver-project-name">项目名称<input id="driver-project-name" maxlength="80" placeholder="例如：餐厅对话短剧"></label><button type="button" class="driver-button" id="driver-new">创建项目</button></div></div>
  <p id="driver-message" class="driver-message" role="status" aria-live="polite" hidden></p>
  <div class="driver-layout"><div class="driver-settings">
  <section class="driver-card"><div class="driver-card-heading"><span class="driver-step-number">01</span><div><h2>导入白膜视频</h2><p>选择一种导入方式即可。</p></div></div>
  <div class="driver-import-tabs" role="group" aria-label="视频导入方式"><button type="button" data-driver-import="path" aria-pressed="true">关联本地路径 <small>不复制原片</small></button><button type="button" data-driver-import="file" aria-pressed="false">选择文件 <small>导入到项目</small></button></div>
- <div data-driver-source="path"><label for="driver-path">视频完整路径</label><div class="driver-source-row"><input id="driver-path" placeholder="粘贴从资源管理器复制的视频地址"><button type="button" class="driver-button" id="driver-link">读取视频</button></div><p class="driver-help">可使用任意文件夹中的视频。关联后请保留原文件位置。</p></div>
- <div data-driver-source="file" hidden><label for="driver-upload-file">选择本机视频</label><div class="driver-source-row"><input type="file" id="driver-upload-file" accept=".mp4,.mov,.mkv,.webm,.avi"><button type="button" class="driver-button" id="driver-upload">导入视频</button></div><p class="driver-help">会在本项目中保存一份视频，最大1GB。</p></div>
+ <div data-driver-source="path"><label for="driver-path">视频完整路径</label><div class="driver-source-row"><input id="driver-path" placeholder="粘贴从资源管理器复制的视频地址"><button type="button" class="driver-button" id="driver-link" aria-describedby="driver-import-guidance">读取视频</button></div><p class="driver-help">可使用任意文件夹中的视频。关联后请保留原文件位置。</p></div>
+ <div data-driver-source="file" hidden><label for="driver-upload-file">选择本机视频</label><div class="driver-source-row"><input type="file" id="driver-upload-file" accept=".mp4,.mov,.mkv,.webm,.avi"><button type="button" class="driver-button" id="driver-upload" aria-describedby="driver-import-guidance">导入视频</button></div><p class="driver-help">会在本项目中保存一份视频，最大1GB。</p></div>
+ <p id="driver-import-guidance" class="driver-help driver-import-guidance" role="status"></p>
  <div class="driver-existing" hidden><label for="driver-select">此项目已导入的视频</label><select id="driver-select"><option value="">尚未导入视频</option></select></div></section>
  <section class="driver-card"><div class="driver-card-heading"><span class="driver-step-number">02</span><div><h2>片段与画质</h2><p>建议先用约3秒的片段，检查动作效果。</p></div></div>
  <fieldset class="driver-choice-group"><legend>生成范围</legend><div class="driver-range-choices"><label><input type="radio" name="driver-range" value="clip" checked><span>选取一个片段</span></label><label><input type="radio" name="driver-range" value="full"><span>整段自动拆分</span></label></div></fieldset>
@@ -71,7 +72,10 @@ function update(){
  $('#driver-create-summary').textContent=!projectId?'先选择或新建一个项目':!s.r?'请先导入视频':s.valid?`将创建 ${s.count} 个镜头 · ${s.split?s.r.metadata.duration.toFixed(2):(s.end-s.start).toFixed(2)} 秒`:'请检查起止时间：片段须在视频内，且不超过5.17秒';
  $('#driver-create').textContent=busy?'正在准备…':created?'镜头已创建':s.valid?`创建 ${s.count} 个镜头 →`:'创建镜头 →';
  for(const node of host.querySelectorAll('input,select,button'))node.disabled=busy;
- $('#driver-link').disabled=busy||!projectId;$('#driver-upload').disabled=busy||!projectId;$('#driver-create').disabled=busy||!projectId||!s.valid||!!created;
+ $('#driver-link').disabled=busy;$('#driver-upload').disabled=busy;$('#driver-create').disabled=busy||!projectId||!s.valid||!!created;
+ $('#driver-link').textContent=projectId?'读取视频':'先选择项目';$('#driver-upload').textContent=projectId?'导入视频':'先选择项目';
+ const guidance=$('#driver-import-guidance');guidance.classList.toggle('is-needed',!projectId);
+ guidance.textContent=projectId?`视频将保存到“${projects.find(p=>p.id===projectId)?.name||'当前项目'}”。`:'请先选择上方的“保存到项目”，或新建一个项目。已选文件会保留。';
  host.setAttribute('aria-busy',String(busy));
 }
 async function perform(action,status){
@@ -84,6 +88,12 @@ async function onClick(event){
  if(button.id==='driver-new-toggle'){const form=$('#driver-new-form');form.hidden=!form.hidden;button.setAttribute('aria-expanded',String(!form.hidden));if(!form.hidden)$('#driver-project-name').focus();return;}
  if(button.dataset.driverContinue){if(created)window.dispatchEvent(new CustomEvent('aigc-open-project',{detail:{projectId:created.projectId,step:Number(button.dataset.driverContinue)}}));return;}
  if(!['driver-new','driver-link','driver-upload','driver-create'].includes(button.id))return;
+ if(['driver-link','driver-upload'].includes(button.id)&&!projectId){
+  message('请先选择保存项目，或新建一个项目；已选文件会保留。',true);
+  if(!projects.length){$('#driver-new-form').hidden=false;$('#driver-new-toggle').setAttribute('aria-expanded','true');}
+  $('.driver-project-bar').scrollIntoView({behavior:'smooth',block:'center'});
+  (projects.length?$('#driver-project'):$('#driver-project-name')).focus({preventScroll:true});return;
+ }
  await perform(async()=>{
   if(button.id==='driver-new'){
    const name=$('#driver-project-name').value.trim();if(!name)throw Error('请先填写项目名称。');
@@ -105,5 +115,6 @@ async function onChange(event){
  if(event.target.id==='driver-project'){
   projectId=event.target.value;localStorage.setItem('aigc-driver-project',projectId);await perform(()=>loadVideos(),'正在读取项目素材…');
  }else if(event.target.id==='driver-select'){message();showSource();}
+ else if(event.target.id==='driver-upload-file')update();
  else if(event.target.matches('[name="driver-range"],[name="driver-quality"]')){resetCreated();update();}
 }
