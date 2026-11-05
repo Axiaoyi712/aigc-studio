@@ -27,7 +27,7 @@ function scheduleSave(){clearTimeout(saveTimer);saveTimer=setTimeout(async()=>{i
 async function api(path, body, method = 'POST') {
   const response = await fetch(path, body === undefined ? {} : { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   const data = await response.json();
-  if (!response.ok) throw new Error(data.error || '请求失败。');
+  if (!response.ok) throw Object.assign(new Error(data.error || '请求失败。'),{status:response.status});
   return data;
 }
 function notice(message, error = false) {
@@ -67,9 +67,12 @@ export async function focusProject(id,step=2) {
 async function load(full) {
   if (currentId) {
     const requestedId = currentId;
-    const loaded = await api('/api/projects/' + requestedId);
+    let loaded;
+    try{loaded=await api('/api/projects/'+requestedId);}catch(error){if(error.status!==404)throw error;[projects,assets]=await Promise.all([api('/api/projects'),api('/api/assets')]);currentId='';snapshot=null;draft=null;dirty=false;clearTimeout(saveTimer);localStorage.removeItem('aigc-project');render();return;}
     if (requestedId !== currentId) return;
+    const assetsChanged=loaded.assets&&JSON.stringify(assets)!==JSON.stringify(loaded.assets);
     snapshot = loaded;
+    if(assetsChanged){assets=loaded.assets;const valid=new Set(assets.map(a=>a.id));if(draft){for(const r of draft.characters||[])r.referenceIds=r.referenceIds.filter(id=>valid.has(id));if(draft.production)draft.production.referenceIds=(draft.production.referenceIds||[]).filter(id=>valid.has(id));for(const s of draft.shots)s.referenceIds=(s.referenceIds||[]).filter(id=>valid.has(id));}if(!full)render();}
     if (full) { draft = structuredClone(snapshot.project); dirty=false; frameChoices.clear(); }
     localStorage.setItem('aigc-project', currentId);
   } else { snapshot = null; draft = null; }
@@ -139,12 +142,12 @@ function renderResults() {
     const key = JSON.stringify([characterSignature, shot, image?.id, image?.status, image?.error, video?.status, video?.error, snapshot.jobs.filter(j=>j.enhancement&&j.shotId===shot.id).map(j=>[j.id,j.status,j.progress]), isWorking, previous?.id, previous?.videoJobId, canContinue]);
     if (signatures.get(shot.id) === key) continue;
     signatures.set(shot.id, key);
-    container.innerHTML = `<div class="shot-image-result">${staleCharacter ? '<p class="notice error">首帧对应的设定或提示词已变化，请重做并确认首帧。</p>' : ''}<h3>候选首帧 <span>${shot.confirmedFrameJobId === image?.id && image ? '已确认' : '待确认'}</span></h3>${image?.outputs[0] ? `<img src="${image.outputs[0].url}" alt="${h(shot.title)}的候选首帧">` : `<div class="shot-placeholder">${image ? names[image.status] : '尚未生成首帧'}</div>`}<select aria-label="首帧版本" class="image-version" ${isWorking ? 'disabled' : ''}>${shot.imageHistory.map(id => job(id)).filter(item => item?.status === 'success').map((item, i) => `<option value="${item.id}" ${item.id === image?.id ? 'selected' : ''}>首帧版本 ${i + 1} · ${item.sourceVideoJobId ? '上一段尾帧' : '种子 ' + item.seed}</option>`).join('')}</select>${index > 0 ? `<button type="button" data-use-previous-tail class="project-button" ${!canContinue || isWorking ? 'disabled' : ''}>使用上一段尾帧</button><p class="field-help">${image?.sourceVideoJobId ? (image.sourceVideoJobId === previous.videoJobId ? '当前首帧来自上一段视频的最后一帧，已自动确认。' : '当前首帧来自旧视频的尾帧；上一段版本已变化，可重新提取。') : '上一镜头视频完成后，可用它的最后一帧接着生成本镜头。'}</p>` : ''}<button type="button" data-confirm-frame class="project-button" ${!shot.imageHistory.some(id => job(id)?.status === 'success') || isWorking ? 'disabled' : ''}>确认所选首帧</button></div><div class="shot-video-result"><h3>视频 <span>${video ? names[video.status] : `${((shot.driver?.effectiveFrames||normalizeVideoOptions(draft.video).frames) / 24).toFixed(2)} 秒`}</span></h3>${video?.outputs[0] ? `<video src="${video.outputs[0].url}" controls playsinline preload="metadata" aria-label="${h(shot.title)}的视频"></video>` : `<div class="shot-placeholder">${video ? names[video.status] : '确认首帧后生成'}</div>`}${video?.status === 'success' && !videoReady(shot) ? '<p class="field-help">此视频来自另一版首帧，需要重做或切回对应首帧。</p>' : ''}<select aria-label="视频版本" class="video-version" ${isWorking ? 'disabled' : ''}><option value="">选择使用的视频版本</option>${shot.videoHistory.map(id => job(id)).filter(item => item?.status === 'success').map((item, i) => `<option value="${item.id}" ${item.id === shot.videoJobId ? 'selected' : ''}>视频版本 ${i + 1}${item.enhancement?' · AI精修'+h(item.enhancement.target):''}</option>`).join('')}</select>${video?.outputs[0] ? `<a href="${video.outputs[0].url}?download=1" download class="project-button">保存此段视频</a>` : ''}${shot.driver&&video?.outputs[0]?`<button type="button" class="project-button" data-driver-compare="${shot.id}">驱动／结果同步对比</button>`:''}${upscaleMarkup(video,snapshot.jobs)}${image?.error || video?.error ? `<p class="field-help">${h(image?.error || video?.error)}</p>` : ''}</div>`;
+    container.innerHTML = `<div class="shot-image-result">${staleCharacter ? '<p class="notice error">首帧对应的设定或提示词已变化，请重做并确认首帧。</p>' : ''}<h3>候选首帧 <span>${shot.confirmedFrameJobId === image?.id && image ? '已确认' : '待确认'}</span></h3>${image?.outputs[0] ? `<img src="${image.outputs[0].url}" alt="${h(shot.title)}的候选首帧">` : `<div class="shot-placeholder">${image ? names[image.status] : '尚未生成首帧'}</div>`}<select aria-label="首帧版本" class="image-version" ${isWorking ? 'disabled' : ''}>${shot.imageHistory.map(id => job(id)).filter(item => item?.status === 'success').map((item, i) => `<option value="${item.id}" ${item.id === image?.id ? 'selected' : ''}>首帧版本 ${i + 1} · ${item.sourceVideoJobId ? '上一段尾帧' : '种子 ' + item.seed}</option>`).join('')}</select>${index > 0 ? `<button type="button" data-use-previous-tail class="project-button" ${!canContinue || isWorking ? 'disabled' : ''}>使用上一段尾帧</button><p class="field-help">${image?.sourceVideoJobId ? (image.sourceVideoJobId === previous.videoJobId ? '当前首帧来自上一段视频的最后一帧，已自动确认。' : '当前首帧来自旧视频的尾帧；上一段版本已变化，可重新提取。') : '上一镜头视频完成后，可用它的最后一帧接着生成本镜头。'}</p>` : ''}<button type="button" data-confirm-frame class="project-button" ${!shot.imageHistory.some(id => job(id)?.status === 'success') || isWorking ? 'disabled' : ''}>确认所选首帧</button></div><div class="shot-video-result"><h3>视频 <span>${video ? names[video.status] : `${((shot.driver?.effectiveFrames||normalizeVideoOptions(draft.video).frames) / 24).toFixed(2)} 秒`}</span></h3>${video?.outputs[0] ? `<video src="${video.outputs[0].url}" controls playsinline preload="metadata" aria-label="${h(shot.title)}的视频"></video>` : `<div class="shot-placeholder">${video ? names[video.status] : '确认首帧后生成'}</div>`}${video?.status === 'success' && !videoReady(shot) ? '<p class="field-help">此视频来自另一版首帧，需要重做或切回对应首帧。</p>' : ''}<select aria-label="视频版本" class="video-version" ${isWorking ? 'disabled' : ''}><option value="">选择使用的视频版本</option>${shot.videoHistory.map(id => job(id)).filter(item => item?.status === 'success').map((item, i) => `<option value="${item.id}" ${item.id === shot.videoJobId ? 'selected' : ''}>视频版本 ${i + 1}${item.enhancement?' · AI精修'+h(item.enhancement.target):''}</option>`).join('')}</select>${video?.outputs[0] ? `<a href="${video.outputs[0].url}" target="_blank" rel="noopener" class="project-button">查看视频原文件</a>` : ''}${shot.driver&&video?.outputs[0]?`<button type="button" class="project-button" data-driver-compare="${shot.id}">驱动／结果同步对比</button>`:''}${upscaleMarkup(video,snapshot.jobs)}${image?.error || video?.error ? `<p class="field-help">${h(image?.error || video?.error)}</p>` : ''}</div>`;
   }
   for (const button of document.querySelectorAll('[data-generate],[data-quick-generate]')) button.disabled = isWorking;
   const exportSignature = JSON.stringify(snapshot.exports);
   if (signatures.get('exports') !== exportSignature) {
-    $('#project-exports').innerHTML = snapshot.exports.length ? `<h2>成片导出</h2>${snapshot.exports.map(item => `<div class="project-export"><span>${h(item.title)} · ${names[item.status]} ${item.status === 'running' ? `${item.completed}/${item.total} 段` : ''}</span>${item.status === 'success' ? `<video src="/api/exports/${item.id}/file" controls preload="metadata" playsinline aria-label="项目成片"></video><a class="project-button accent" href="/api/exports/${item.id}/file?download=1" download>保存完整成片 ↗</a><small>${item.metadata?.frames ?? ''} 帧 · ${item.metadata?.duration?.toFixed(2) ?? ''} 秒</small>` : item.error ? `<p class="notice error">${h(item.error)}</p>` : ''}</div>`).join('')}` : '';
+    $('#project-exports').innerHTML = snapshot.exports.length ? `<h2>成片导出</h2>${snapshot.exports.map(item => `<div class="project-export"><span>${h(item.title)} · ${names[item.status]} ${item.status === 'running' ? `${item.completed}/${item.total} 段` : ''}</span>${item.status === 'success' ? `<video src="/api/exports/${item.id}/file" controls preload="metadata" playsinline aria-label="项目成片"></video><a class="project-button accent" href="/api/exports/${item.id}/file" target="_blank" rel="noopener">查看成片原文件 ↗</a><small>${item.metadata?.frames ?? ''} 帧 · ${item.metadata?.duration?.toFixed(2) ?? ''} 秒</small>` : item.error ? `<p class="notice error">${h(item.error)}</p>` : ''}</div>`).join('')}` : '';
     signatures.set('exports', exportSignature);
   }
   updateProductionUI();
@@ -248,14 +251,14 @@ $('#projects-panel').addEventListener('click', event => {
       changed();
       render(); renderResults();
     } else if (button.id === 'delete-project') {
-      if (!draft || !confirm(`删除项目“${draft.name}”？\n\n将移除项目及其历史队列记录，自动备份项目记录。\n图片、视频、导出成片、归档包和共享素材会保留。`)) return;
+      if (!draft || !confirm(`删除项目“${draft.name}”？\n\n将永久删除此项目及其图片、视频、驱动缓存和成片。\n相关镜头引用会同步清理。公共素材库中独立保存的参考原件保留；不会创建媒体备份。`)) return;
       if (dirty || saving) await saveProject();
       const removedId = currentId;
       await api('/api/projects/' + removedId, {}, 'DELETE');
       clearTimeout(saveTimer); dirty = false;
       localStorage.removeItem('aigc-step-' + removedId); localStorage.removeItem('aigc-project');
       projects = await api('/api/projects'); currentId = projects[0]?.id || '';
-      await load(true); notice('项目已删除，项目记录已自动备份；作品和共享素材已保留。');
+      await load(true); notice('项目及其生成文件已彻底删除，相关引用已清理。');
     } else if (button.id === 'new-project') {
       if(dirty)await saveProject();const created = await api('/api/projects', { name: $('#new-project-name').value,production:normalizeProduction({},assets) });
       projects.push(created); currentId = created.id; await load(true);

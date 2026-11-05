@@ -140,3 +140,6 @@ for(const count of [4,6,10,20])test(count+' project reference images all reach t
 test('project multi-reference workflow rejects fewer than four and more than twenty images',()=>{
   for(const n of [3,21])assert.throws(()=>parseRequest({template:'flux-multi',prompt:'test',images:Array(n).fill('image.png')}),/4～20/);
 });
+
+
+test('Z-Image only saves the final image and does not create a second temp preview',async()=>{ const input=request('z-image');const graph=compileGraph(await loadGraph(root,'z-image'),input,'single-output');assert.equal(Object.values(graph).filter(n=>n.class_type==='PreviewImage').length,0);assert.equal(Object.values(graph).filter(n=>n.class_type==='SaveImage').length,1);});

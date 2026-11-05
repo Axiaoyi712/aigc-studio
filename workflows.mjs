@@ -62,7 +62,7 @@ export function compileGraph(graph, input, jobId) {
   const [width, height] = input.size.split('x').map(Number);
   const video = template.section === 'video' ? normalizeVideoOptions(input.video) : null;
   for (const node of graph.nodes) {
-    if (node.type === 'Note') continue;
+    if (node.type === 'Note' || node.type === 'PreviewImage') continue;
     const fields = widgets[node.type];
     if (!fields) throw new Error(`尚未适配节点 ${node.type}，请先更新工作流适配。`);
     const values = node.widgets_values ?? [];

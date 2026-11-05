@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, statSync, createReadStream, unlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, statSync, createReadStream, unlinkSync, rmSync } from 'node:fs';
 import { resolve, extname } from 'node:path';
 import { spawn } from 'node:child_process';
 import { localMedia, requireMedia } from './media.mjs';
+import {uploadFile} from './uploads.mjs';
 import { validateCharacters } from './characters.mjs';
 import { normalizeProduction, normalizeDirector } from './public/director-options.js';
 import { shotPlan } from './production.mjs';
@@ -41,9 +42,9 @@ export function createProjectFiles({state,save,config,appRoot,dataRoot,readBody,
     const exports=structuredClone(state.exports.filter(e=>e.projectId===project.id));
     const files=[];
     const add=(kind,id,path,extra={})=>{if(!path||!existsSync(path))throw fault('归档所需素材缺失，请先修复引用。');files.push({kind,id,...extra,path,archive:`media/${files.length}${extname(path).toLowerCase()}`});};
-    for(const [id,u] of Object.entries(uploads)){if(!u)throw fault('上传记录缺失。');const slash=u.name.lastIndexOf('/');add('upload',id,requireMedia(config,{type:'input',filename:u.name.slice(slash+1),subfolder:u.name.slice(0,slash)}));}
+    for(const [id,u] of Object.entries(uploads)){if(!u)throw fault('上传记录缺失。');add('upload',id,requireMedia(config,uploadFile(u)));}
     for(const j of jobs){j.outputs=j.outputs.filter(o=>o.type==='output'&&existsSync(localMedia(config,o)||'')).map((o,index)=>({...o,index}));if(j.status==='success'&&!j.outputs.length)throw fault('成功任务的正式成品缺失，不能生成不完整的归档。');for(const o of j.outputs)add('job',j.id,localMedia(config,o),{index:o.index});}
-    for(const a of audioAssets)add('audio',a.id,resolve(dataRoot,'audio',a.filename));
+    for(const a of audioAssets)add('audio',a.id,a.storagePath||resolve(dataRoot,'audio',a.filename));
     for(const e of exports)if(e.status==='success')add('export',e.id,e.storagePath||resolve(dataRoot,'exports',e.id+'.mp4'));
     for(const v of driverVideos)add('driver-source',v.id,v.sourcePath);
     for(const c of driverClips)add('driver-clip',c.id,resolve(config.comfyRoot,'output',c.file));
@@ -51,6 +52,7 @@ export function createProjectFiles({state,save,config,appRoot,dataRoot,readBody,
   }
   async function restore(zip) {
     const importId=randomUUID(),destination=resolve(folder,importId);
+    try {
     await pythonJSON(config,appRoot,'archive-project.py',['unpack',zip,destination]);
     const data=JSON.parse(readFileSync(resolve(destination,'project.json'),'utf8'));
     if(!Array.isArray(data.jobs)||data.jobs.length>5000||!Array.isArray(data.assets)||!Array.isArray(data.project?.shots)||data.project.shots.length>50||!data.project.name)throw fault('项目归档结构无效。');
@@ -66,7 +68,7 @@ export function createProjectFiles({state,save,config,appRoot,dataRoot,readBody,
     };
     const project=relink(data.project),jobs=relink(data.jobs),assets=relink(data.assets),audioAssets=relink(data.audioAssets||[]),exports=relink(data.exports||[]);
     const driverVideos=relink(data.driverVideos||[]),driverClips=relink(data.driverClips||[]);
-    for(const e of exports)delete e.storagePath;for(const a of assets)delete a.projectFiles;delete project.storageFolder;for(const s of project.shots)delete s.storageFolder;
+    for(const a of audioAssets)delete a.storagePath;for(const e of exports)delete e.storagePath;for(const a of assets)delete a.projectFiles;delete project.storageFolder;for(const s of project.shots)delete s.storageFolder;
     
     const uploads=Object.fromEntries(Object.entries(data.uploads||{}).map(([id,u])=>[map(id),structuredClone(u)]));
     if(project.production)project.production=normalizeProduction(project.production,assets);
@@ -76,7 +78,7 @@ export function createProjectFiles({state,save,config,appRoot,dataRoot,readBody,
       const source=resolve(destination,file.archive);let target;
       const id=map(file.id);const extension=extname(file.archive);
       if(!['.png','.jpg','.jpeg','.webp','.mp4','.webm','.mkv','.mov','.avi','.wav','.mp3','.flac','.m4a','.ogg'].includes(extension))throw fault('归档中有不支持的素材。');
-      if(file.kind==='upload'&&uploads[id]){uploads[id].name=`aigc-studio/restored/${importId}/${id}${extension}`;target=resolve(config.comfyRoot,'input',uploads[id].name);}
+      if(file.kind==='upload'&&uploads[id]){delete uploads[id].file;delete uploads[id].sha256;uploads[id].name=`aigc-studio/restored/${importId}/${id}${extension}`;target=resolve(config.comfyRoot,'input',uploads[id].name);}
       else if(file.kind==='job'){
         const output=jobs.find(j=>j.id===id)?.outputs?.[file.index];if(!output)throw fault('归档成品引用无效。');
         Object.assign(output,{type:'output',subfolder:`aigc-studio/restored/${importId}`,filename:`${id}-${file.index}${extension}`});target=localMedia(config,output);
@@ -104,6 +106,7 @@ export function createProjectFiles({state,save,config,appRoot,dataRoot,readBody,
     project.name=String(project.name).slice(0,70)+'（恢复副本）';project.restoredAt=new Date().toISOString();
     state.projects.push(project);state.jobs.push(...jobs);state.assets.push(...assets);Object.assign(state.uploads,uploads);state.audioAssets.push(...audioAssets);state.exports.push(...exports);state.driverVideos??=[];state.driverClips??=[];state.driverVideos.push(...driverVideos);state.driverClips.push(...driverClips);save();
     return project;
+    }finally{rmSync(destination,{recursive:true,force:true});}
   }
   async function handle(req,res,url){
     if(url.pathname==='/api/audio'){
@@ -116,12 +119,13 @@ export function createProjectFiles({state,save,config,appRoot,dataRoot,readBody,
       const item={id,filename,type,name:decodeURIComponent(req.headers['x-file-name']||'背景声音').slice(0,180),...metadata};state.audioAssets.push(item);save();send(res,201,item);return true;
     }
     const audio=url.pathname.match(/^\/api\/audio\/([a-f0-9-]+)\/file$/);
-    if(audio&&req.method==='GET'){const item=state.audioAssets.find(a=>a.id===audio[1]);if(!item)throw fault('声音不存在。');streamFile(req,res,resolve(dataRoot,'audio',item.filename),item.type);return true;}
+    if(audio&&req.method==='GET'){const item=state.audioAssets.find(a=>a.id===audio[1]);if(!item)throw fault('声音不存在。');streamFile(req,res,item.storagePath||resolve(dataRoot,'audio',item.filename),item.type);return true;}
     if(url.pathname==='/api/projects/import'&&req.method==='POST'){
       const input=resolve(folder,randomUUID()+'.zip');writeFileSync(input,await readBody(req,500*1024*1024));try{send(res,201,await restore(input));}finally{unlinkSync(input);}return true;
     }
     const pack=url.pathname.match(/^\/api\/projects\/([a-f0-9-]+)\/archive$/);
     if(pack&&req.method==='POST'){
+      if(config.projectStorage)throw fault('已启用单份存储，不再创建包含图片视频的ZIP备份。请打开项目存储位置查看原件。');
       const project=projectById(pack[1]);if(!project)throw fault('项目不存在。');
       if(state.batchQueue.some(q=>q.projectId===project.id&&['waiting','dispatched'].includes(q.status))||state.jobs.some(j=>j.projectId===project.id&&['submitting','queued','running','recovering'].includes(j.status)))throw fault('请等待项目生成完成后归档。');
       const id=randomUUID(),manifest=resolve(folder,id+'.json');writeFileSync(manifest,JSON.stringify(archiveData(project)));

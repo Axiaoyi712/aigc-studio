@@ -215,7 +215,7 @@ $('#create-form').addEventListener('submit', async event => {
 });
 function actionMarkup(job) {
   const file = job.outputs?.[0];
-  return `<div class="task-actions"><button type="button" data-open-work-folder="${job.id}">打开所在文件夹</button>${file ? `<a href="${file.url}?download=1" download>保存${file.kind === 'video' ? '视频' : '图片'}</a>${file.kind === 'image' ? `<button type="button" data-use="${job.id}">用作视频首帧 ↗</button>` : ''}` : ''}${upscaleMarkup(job,jobs)}${active.has(job.status) ? `<button type="button" class="cancel" data-cancel="${job.id}">停止此任务</button>` : `<button type="button" class="delete-work" data-delete-work="${job.id}" title="从作品列表删除，保留本机文件和项目引用">删除</button>`}</div>`;
+  return `<div class="task-actions"><button type="button" data-open-work-folder="${job.id}">打开所在文件夹</button>${file ? `<a href="${file.url}" target="_blank" rel="noopener">查看原文件</a>${file.kind === 'image' ? `<button type="button" data-use="${job.id}">用作视频首帧 ↗</button>` : ''}` : ''}${upscaleMarkup(job,jobs)}${active.has(job.status) ? `<button type="button" class="cancel" data-cancel="${job.id}">停止此任务</button>` : `<button type="button" class="delete-work" data-delete-work="${job.id}" title="彻底删除文件，并清理所有项目中的对应引用">删除</button>`}</div>`;
 }
 function renderPreview() {
   const job = jobs.find(item => item.id === selectedJob);
@@ -287,13 +287,13 @@ $('#clear-work-selection').addEventListener('click', () => { selectedWorks.clear
 $('#delete-selected-works').addEventListener('click', async () => {
   if (deletingWorks || !selectedWorks.size) return;
   const jobIds = [...selectedWorks];
-  if (!confirm(`从作品列表删除选中的 ${jobIds.length} 项作品？\n\n本机文件和项目中已使用的引用会保留。`)) return;
+  if (!confirm(`彻底删除选中的 ${jobIds.length} 项作品？\n\n将永久删除对应图片或视频，并清理所有项目中的引用，无法通过备份恢复。`)) return;
   deletingWorks = true; updateWorkSelection();
   try {
     await post('/api/jobs/delete', { jobIds });
     if (selectedWorks.has(selectedJob)) { selectedJob = null; lastPreview = ''; }
     selectedWorks.clear();
-    await refreshJobs(); notice(`已从作品列表删除 ${jobIds.length} 项，本机文件和项目引用已保留。`);
+    await refreshJobs(); notice(`已彻底删除 ${jobIds.length} 项，并清理文件与项目引用。`);
   } catch (error) { notice(error.message, true); }
   finally { deletingWorks = false; updateWorkSelection(); }
 });
@@ -319,12 +319,12 @@ document.addEventListener('click', async event => {
   if (remove) {
     if (deletingWorks) return;
     const job = jobs.find(item => item.id === remove.dataset.deleteWork);
-    if (!job || !confirm(`从作品列表删除“${job.title}”（${new Date(job.createdAt).toLocaleString('zh-CN', { hour12: false })}）？\n\n本机文件和项目中已使用的引用会保留。`)) return;
+    if (!job || !confirm(`彻底删除“${job.title}”（${new Date(job.createdAt).toLocaleString('zh-CN', { hour12: false })}）？\n\n将永久删除对应图片或视频，并清理所有项目中的引用，无法通过备份恢复。`)) return;
     deletingWorks = true; updateWorkSelection();
     try {
       await api('/api/jobs/' + job.id, { method: 'DELETE', headers: { 'Content-Type': 'application/json' } });
       if (selectedJob === job.id) { selectedJob = null; lastPreview = ''; }
-      await refreshJobs(); notice('已从作品列表删除，本机文件和项目引用已保留。');
+      await refreshJobs(); notice('已彻底删除文件，并清理项目引用。');
     } catch (error) { notice(error.message, true); }
     finally { deletingWorks = false; updateWorkSelection(); }
     return;

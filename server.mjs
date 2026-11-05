@@ -14,6 +14,8 @@ import { createAssistant } from './assistant.mjs';
 import { createStorage } from './storage.mjs';
 import { createUpscaler } from './upscale.mjs';
 import { createDrivers } from './drivers.mjs';
+import {createMediaLifecycle} from './media-lifecycle.mjs';
+import {uploadFile} from './uploads.mjs';
 
 const root = dirname(fileURLToPath(import.meta.url));
 const activeStates = new Set(['submitting', 'queued', 'running', 'recovering']);
@@ -42,6 +44,7 @@ export function createStudio(config, { appRoot = root, dataRoot = resolve(appRoo
   const state = existsSync(statePath) ? JSON.parse(readFileSync(statePath, 'utf8')) : { jobs: [], uploads: {} };
   const storage = createStorage(config,state,dataRoot);
   const save = () => { storage.sync(); writeFileSync(statePath + '.tmp', JSON.stringify(state, null, 2)); renameSync(statePath + '.tmp', statePath); };
+  const lifecycle=createMediaLifecycle({state,config,dataRoot,storage});
   let submitting = false;
   let updating = false;
   let ws;
@@ -208,12 +211,12 @@ export function createStudio(config, { appRoot = root, dataRoot = resolve(appRoo
     } finally { submitting = false; }
   }
   const drivers=createDrivers({state,save,config,appRoot,storage,send,readBody});
-  const projects = createProjects({ state, save, submitJob, refresh, json, upstream, publicJob, config, appRoot, dataRoot, send, readBody, isEnhancing:()=>upscale.busy()||drivers.busy(), finalizeVideos:()=>upscale.tick(),resolveDriver:(id,pid)=>drivers.clip(id,pid) });
+  const projects = createProjects({ state, save, submitJob, refresh, json, upstream, publicJob, config, appRoot, dataRoot, send, readBody, isEnhancing:()=>upscale.busy()||drivers.busy(), finalizeVideos:()=>upscale.tick(),resolveDriver:(id,pid)=>drivers.clip(id,pid),removeProject:id=>lifecycle.removeProject(id) });
   const prompts = createPromptLibrary({ state, save, appRoot, dataRoot, config, send, readBody });
   const projectFiles = createProjectFiles({state,save,config,appRoot,dataRoot,send,readBody});
   const assistant = createAssistant({config,state,save,dataRoot,json,send,readBody,isGenerating:()=>submitting||projects.isExporting()||upscale.busy()||state.jobs.some(j=>activeStates.has(j.status))});
   const upscale=createUpscaler({state,save,config,appRoot,send,readBody,json,post,publicJob,isBusy:()=>submitting||projects.isExporting()||state.jobs.some(j=>activeStates.has(j.status))||state.batchQueue.some(q=>['waiting','dispatched'].includes(q.status)),release:()=>assistant.release()});
-  const timer = setInterval(() => { connectEvents(); void projects.tick(); }, 3000);
+  const timer = setInterval(() => { connectEvents(); if(!submitting&&!upscale.busy()&&!drivers.busy()&&!projects.isExporting()&&!state.jobs.some(j=>activeStates.has(j.status))&&!state.batchQueue.some(q=>['waiting','dispatched'].includes(q.status))){try{if(lifecycle.reconcile())save();}catch(error){console.error('媒体同步暂未完成：',error.message);}} void projects.tick(); }, 3000);
   timer.unref();
   for (const job of state.jobs) if (activeStates.has(job.status)) job.status = 'recovering';
 
@@ -261,13 +264,13 @@ export function createStudio(config, { appRoot = root, dataRoot = resolve(appRoo
         const targets = jobIds.map(id => state.jobs.find(job => job.id === id));
         if (targets.some(job => !job)) throw fault('所选作品中有不存在的记录，本次未删除任何作品。', 404);
         if (targets.some(job => activeStates.has(job.status))) throw fault('所选内容中有正在生成的任务，请等待结束后再删除。本次未删除任何作品。', 409);
-        const pending = targets.filter(job => !job.deletedAt);
+        if(submitting||upscale.busy()||drivers.busy()||projects.isExporting()||state.jobs.some(j=>activeStates.has(j.status))||state.batchQueue.some(q=>['waiting','dispatched'].includes(q.status)))throw fault('请先完成或取消生成队列，再彻底删除媒体。',409);
+        const pending = targets;
         if (pending.length) {
-          const deletedAt = new Date().toISOString();
-          for (const job of pending) job.deletedAt = deletedAt;
+          lifecycle.removeJobs(pending.map(j=>j.id));
           save();
         }
-        return send(res, 200, { deletedIds: jobIds, filesPreserved: true });
+        return send(res, 200, { deletedIds: jobIds, filesPreserved: false });
       }
       if (req.method === 'POST' && url.pathname === '/api/uploads') {
         const type = req.headers['content-type']?.split(';')[0];
@@ -291,8 +294,8 @@ export function createStudio(config, { appRoot = root, dataRoot = resolve(appRoo
       if (req.method === 'GET' && uploadMatch) {
         const upload = state.uploads[uploadMatch[1]];
         if (!upload) throw fault('图片不存在。', 404);
-        const slash = upload.name.lastIndexOf('/');
-        return await streamMedia(`/view?${new URLSearchParams({ filename: upload.name.slice(slash + 1), subfolder: upload.name.slice(0, slash), type: 'input' })}`, req, res);
+        const file=uploadFile(upload);
+        return await streamMedia(`/view?${new URLSearchParams({ filename:file.filename,subfolder:file.subfolder,type:file.type })}`, req, res);
       }
       if (req.method === 'POST' && ['/api/jobs', '/api/compile'].includes(url.pathname)) {
         const body = JSON.parse((await readBody(req)).toString('utf8'));
@@ -305,8 +308,9 @@ export function createStudio(config, { appRoot = root, dataRoot = resolve(appRoo
         const job = state.jobs.find(item => item.id === deleteWork[1]);
         if (!job) throw fault('作品或任务不存在。', 404);
         if (activeStates.has(job.status)) throw fault('此任务仍在运行，请先停止任务并等待结束后再删除。', 409);
-        if (!job.deletedAt) { job.deletedAt = new Date().toISOString(); save(); }
-        return send(res, 200, { deleted: true, id: job.id, filesPreserved: true });
+        if(submitting||upscale.busy()||drivers.busy()||projects.isExporting()||state.jobs.some(j=>activeStates.has(j.status))||state.batchQueue.some(q=>['waiting','dispatched'].includes(q.status)))throw fault('请先完成或取消生成队列，再彻底删除媒体。',409);
+        lifecycle.removeJobs([job.id]);save();
+        return send(res, 200, { deleted: true, id: job.id, filesPreserved: false });
       }
       const auditMatch=url.pathname.match(/^\/api\/jobs\/([a-f0-9-]+)\/audit$/);
       if(req.method==='POST'&&auditMatch){const job=state.jobs.find(j=>j.id===auditMatch[1]);if(!job)throw fault('任务不存在。',404);if(!job.workflowSnapshot){const history=(await json('/history/'+job.id))[job.id];const prompt=history?.prompt?.[2];if(!prompt)throw fault('引擎历史已不存在；保留原参数，不补造执行图。');job.workflowSnapshot=workflowSnapshot(prompt,'engine-history');save();}return send(res,200,job.workflowSnapshot);}
@@ -355,7 +359,7 @@ export function createStudio(config, { appRoot = root, dataRoot = resolve(appRoo
     const headers = {};
     if (req.headers.range) headers.Range = req.headers.range;
     const response = await upstream(path, { headers });
-    const outgoing = { 'Content-Type': response.headers.get('content-type') ?? 'application/octet-stream', 'Cache-Control': 'private, max-age=3600', 'X-Content-Type-Options': 'nosniff' };
+    const outgoing = { 'Content-Type': response.headers.get('content-type') ?? 'application/octet-stream', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' };
     for (const name of ['content-length', 'content-range', 'accept-ranges']) if (response.headers.has(name)) outgoing[name] = response.headers.get(name);
     if (downloadName) outgoing['Content-Disposition'] = `attachment; filename*=UTF-8''${encodeURIComponent(downloadName)}`;
     res.writeHead(response.status, outgoing);

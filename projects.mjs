@@ -5,6 +5,7 @@ import { spawn } from 'node:child_process';
 import { normalizeVideoOptions } from './public/video-options.js';
 import { validateCharacters, characterContext } from './characters.mjs';
 import { primaryOutput, requireMedia } from './media.mjs';
+import {uploadFile} from './uploads.mjs';
 import { normalizeDirector, normalizeProduction } from './public/director-options.js';
 import { shotPlan, frameMatches, videoMatches, validateEdit } from './production.mjs';
 
@@ -12,7 +13,7 @@ const active = new Set(['submitting', 'queued', 'running', 'recovering']);
 const pending = item => ['waiting', 'dispatched'].includes(item.status);
 function fail(message, status = 400) { throw Object.assign(new Error(message), { status }); }
 function text(value, limit = 6000) { return String(value ?? '').trim().slice(0, limit); }
-export function createProjects({ state, save, submitJob, refresh, json, upstream, publicJob, config, appRoot, dataRoot, send, readBody, isEnhancing=()=>false,finalizeVideos=async()=>false,resolveDriver }) {
+export function createProjects({ state, save, submitJob, refresh, json, upstream, publicJob, config, appRoot, dataRoot, send, readBody, isEnhancing=()=>false,finalizeVideos=async()=>false,resolveDriver,removeProject }) {
   state.projects ??= [];
   state.assets ??= [];
   state.batchQueue ??= [];
@@ -28,7 +29,7 @@ export function createProjects({ state, save, submitJob, refresh, json, upstream
   const projectBusy = pid => state.batchQueue.some(item => item.projectId === pid && pending(item));
   function imageJob(id) {
     const job = jobById(id);
-    if (!job || job.status !== 'success' || primaryOutput(job)?.kind !== 'image') fail('请先选择生成成功的首帧。');
+    if (!job || job.deletedAt || job.status !== 'success' || primaryOutput(job)?.kind !== 'image') fail('请先选择生成成功的首帧。');
     requireMedia(config, primaryOutput(job));
     return job;
   }
@@ -48,17 +49,10 @@ export function createProjects({ state, save, submitJob, refresh, json, upstream
     for(const item of state.batchQueue.filter(q=>q.dependsOnId===id&&q.status==='waiting')){item.status='cancelled';item.error='前置首帧未完成，已取消自动生成视频；可以重新一键生成。';}
   }
   async function uploadFrame(job) {
-    const file = primaryOutput(job);
-    const response = await upstream('/view?' + new URLSearchParams({ filename: file.filename, subfolder: file.subfolder, type: file.type }));
-    if(!response.ok)fail('无法读取已生成的首帧，请检查 ComfyUI 输出文件后重试。');
-    const id = randomUUID();
-    const form = new FormData();
-    form.set('image', new Blob([await response.arrayBuffer()], { type: 'image/png' }), id + '.png');
-    form.set('type', 'input'); form.set('subfolder', 'aigc-studio');
-    const uploaded = await json('/upload/image', { method: 'POST', body: form });
-    state.uploads[id] = { name: [uploaded.subfolder, uploaded.name].filter(Boolean).join('/'), type: 'image/png' };
-    save();
-    return id;
+    const file=primaryOutput(job);requireMedia(config,file);
+    const existing=Object.entries(state.uploads).find(([id,u])=>u.file?.type===file.type&&u.file?.filename===file.filename&&u.file?.subfolder===file.subfolder);
+    if(existing)return existing[0];
+    const id=randomUUID();state.uploads[id]={name:[file.subfolder,file.filename].filter(Boolean).join('/'),file:{type:file.type,subfolder:file.subfolder,filename:file.filename},type:'image/png',sourceJobId:job.id};save();return id;
   }
   async function tick() {
     if (ticking) return;
@@ -127,7 +121,7 @@ export function createProjects({ state, save, submitJob, refresh, json, upstream
         if (assets.length > 20) fail(`镜头「${shot.title}」的全部参考合计超过 20 张，请减少参考图。`);
         input = { template: assets.length > 3 ? 'flux-multi' : ['z-image','flux-edit','flux-2ref','flux-3ref'][assets.length], prompt: plan.imagePrompt, images: assets.map(asset => asset.uploadId), seed: shot.seed, size: plan.size };
         if(driver){input.images.unshift(driver.firstFrameUploadId);if(input.images.length>20)fail('白膜首帧加角色、场景参考合计不能超过20张。');input.template=input.images.length>3?'flux-multi':['z-image','flux-edit','flux-2ref','flux-3ref'][input.images.length];}
-        for (const asset of assets) { const upload=state.uploads[asset.uploadId]; if(!upload) fail('参考图上传记录缺失。'); const slash=upload.name.lastIndexOf('/'); requireMedia(config,{type:'input',subfolder:upload.name.slice(0,slash),filename:upload.name.slice(slash+1)}); }
+        for (const asset of assets) { const upload=state.uploads[asset.uploadId]; if(!upload) fail('参考图上传记录缺失。'); requireMedia(config,uploadFile(upload)); }
       } else {
         if (!driver && project.videoTemplate === 'h3-reference' && plan.referenceIds.length > 3) fail('Ref2VA 实验视频最多使用 3 张资产参考加 1 张分镜图；20 张参考目前用于首帧生成。');
         if(newFrameId)frameJobId=newFrameId;
@@ -220,7 +214,7 @@ export function createProjects({ state, save, submitJob, refresh, json, upstream
     else if(project.shots.some(s=>s.driver)){const d=project.shots.find(s=>s.driver).driver,scale=720/Math.min(d.width,d.height);render.canvas={width:Math.ceil(d.width*scale/2)*2,height:Math.ceil(d.height*scale/2)*2,fps:24};}
     const deliveryFloor=Math.max(0,...videos.map(j=>[project.video?.delivery,j.video?.delivery].some(v=>v==='1080p')?1080:[project.video?.delivery,j.video?.delivery].some(v=>v==='720p')?720:0));
     if(render.canvas&&Math.min(render.canvas.width,render.canvas.height)<deliveryFloor){const scale=deliveryFloor/Math.min(render.canvas.width,render.canvas.height);render.canvas.width=Math.ceil(render.canvas.width*scale/2)*2;render.canvas.height=Math.ceil(render.canvas.height*scale/2)*2;}
-    if(project.production?.backgroundAudioId){const audio=state.audioAssets?.find(a=>a.id===project.production.backgroundAudioId);if(!audio)fail('背景音已不存在，请重新选择。');const audioPath=resolve(dataRoot,'audio',audio.filename);if(!existsSync(audioPath))fail('背景声音文件缺失。');render.background={path:audioPath,gain:project.production.backgroundGain};}
+    if(project.production?.backgroundAudioId){const audio=state.audioAssets?.find(a=>a.id===project.production.backgroundAudioId);if(!audio)fail('背景音已不存在，请重新选择。');const audioPath=audio.storagePath||resolve(dataRoot,'audio',audio.filename);if(!existsSync(audioPath))fail('背景声音文件缺失。');render.background={path:audioPath,gain:project.production.backgroundGain};}
     writeFileSync(manifest, JSON.stringify(render));
     const item = { id, projectId: project.id, title: project.name, status: 'running', jobIds: videos.map(job => job.id), createdAt: new Date().toISOString(), completed: 0, total: paths.length };
     state.exports.unshift(item); exporting = true; save();
@@ -293,14 +287,10 @@ export function createProjects({ state, save, submitJob, refresh, json, upstream
         } else fail('接口不存在。', 404);
       } else {
         const project = projectById(parts[2]);
-        if (parts.length === 3 && req.method === 'GET') result = { project, ref2vaEnabled:Boolean(config.enableRef2VA), plans: project.shots.map(shot=>shotPlan(project,shot,state.assets)), archives:(state.archives||[]).filter(a=>a.projectId===project.id), characterSignatures: Object.fromEntries(project.shots.map(shot => [shot.id, characterContext(project, shot).signature])), jobs: state.jobs.filter(job => job.projectId === project.id).map(publicJob), queue: state.batchQueue.filter(item => item.projectId === project.id), paused: state.queuePaused, exports: state.exports.filter(item => item.projectId === project.id) };
+        if (parts.length === 3 && req.method === 'GET') result = { project, assets:state.assets, ref2vaEnabled:Boolean(config.enableRef2VA), plans: project.shots.map(shot=>shotPlan(project,shot,state.assets)), archives:(state.archives||[]).filter(a=>a.projectId===project.id), characterSignatures: Object.fromEntries(project.shots.map(shot => [shot.id, characterContext(project, shot).signature])), jobs: state.jobs.filter(job => job.projectId === project.id).map(publicJob), queue: state.batchQueue.filter(item => item.projectId === project.id), paused: state.queuePaused, exports: state.exports.filter(item => item.projectId === project.id) };
         else if (parts.length === 3 && req.method === 'DELETE') {
-          if (projectBusy(project.id) || tailProjects.has(project.id) || state.jobs.some(job => job.projectId === project.id && active.has(job.status)) || state.exports.some(item => item.projectId === project.id && item.status === 'running')) fail('该项目正在生成、排队、提取尾帧或导出，请等待完成或取消待处理项后再删除。', 409);
-          const folder = resolve(dataRoot, 'deleted-projects');
-          mkdirSync(folder, { recursive: true });
-          writeFileSync(resolve(folder, project.id + '-' + randomUUID() + '.json'), JSON.stringify({ deletedAt: new Date().toISOString(), project, queue: state.batchQueue.filter(item => item.projectId === project.id) }, null, 2));
-          state.projects = state.projects.filter(item => item.id !== project.id);
-          state.batchQueue = state.batchQueue.filter(item => item.projectId !== project.id);
+          if (projectBusy(project.id) || tailProjects.size || isEnhancing() || state.batchQueue.some(pending) || state.jobs.some(job => active.has(job.status)) || state.exports.some(item => item.status === 'running')) fail('正在生成、排队、提取尾帧或导出，请等待完成或取消待处理项后再删除项目。', 409);
+          if(!removeProject)fail('永久删除功能尚未初始化。');removeProject(project.id);
           save(); result = { deleted: true, id: project.id };
         }
         else if (parts.length === 3 && req.method === 'POST') {

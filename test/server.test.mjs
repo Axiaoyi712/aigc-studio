@@ -174,7 +174,7 @@ test('confirming a historical frame survives a stale editor save and video submi
   const current=h.app.state.projects[0].shots[0];assert.equal(current.imageJobId,frames[0].id);assert.equal(current.confirmedFrameJobId,frames[0].id);
   await h.post('/api/batch-queue/pause',{paused:true});const response=await h.post(`/api/projects/${project.id}/batch`,{requestId:randomUUID(),kind:'video',shotIds:[shot.id]});assert.equal(response.status,201);
   const [item]=await response.json();assert.equal(item.frameJobId,frames[0].id);await h.post('/api/batch-queue/pause',{paused:false});await h.app.tick();
-  assert.equal(h.engine.submitted.length,1);assert.equal(h.app.state.jobs.find(j=>j.id===item.id).frameJobId,frames[0].id);assert.equal(new URL(h.engine.viewed[0],'http://fixture').searchParams.get('filename'),'old.png');
+  assert.equal(h.engine.submitted.length,1);assert.equal(h.app.state.jobs.find(j=>j.id===item.id).frameJobId,frames[0].id);assert.equal(h.engine.submitted[0].prompt['1'].inputs.image,'aigc-studio/old.png [output]');assert.equal(h.engine.viewed?.length||0,0);
 });
 
 test('general prompt length and both-stage reference checks reject atomically',async t=>{
@@ -359,7 +359,7 @@ test('project planning persists production, per-shot duration and immutable inpu
   p.production.style='不同风格';assert.equal(item.productionSnapshot.production.style,'雨夜动画');
 });
 
-test('deleting a project backs up its record and keeps media, shared assets, works and other projects',async t=>{
+test('deleting a project permanently removes its generated media and keeps independent shared assets and other projects',async t=>{
   const h=await harness(t),project=await threeShotProject(h);
   const other=await(await h.post('/api/projects',{name:'Keep this project'})).json();
   const jobId=randomUUID(),exportId=randomUUID(),archiveId=randomUUID();
@@ -374,10 +374,9 @@ test('deleting a project backs up its record and keeps media, shared assets, wor
   assert.deepEqual((await(await fetch(h.url+'/api/projects')).json()).map(p=>p.id),[other.id]);
   assert.equal((await fetch(h.url+'/api/projects/'+project.id)).status,404);
   assert.ok(!h.app.state.batchQueue.some(q=>q.projectId===project.id));
-  for(const [key,value] of Object.entries(kept))assert.deepEqual(h.app.state[key],value);
-  assert.equal(await readFile(media,'utf8'),'original video');
-  const folder=resolve(h.temp,'data/deleted-projects'),files=await readdir(folder);assert.equal(files.length,1);
-  const backup=JSON.parse(await readFile(resolve(folder,files[0]),'utf8'));assert.equal(backup.project.id,project.id);assert.equal(backup.project.shots.length,3);assert.equal(backup.queue[0].id,jobId);
+  assert.ok(h.app.state.jobs.find(j=>j.id===jobId).deletedAt);
+  assert.deepEqual(h.app.state.assets,kept.assets);assert.deepEqual(h.app.state.uploads,kept.uploads);
+  await assert.rejects(readFile(media),e=>e.code==='ENOENT');
   const stored=JSON.parse(await readFile(resolve(h.temp,'data/state.json'),'utf8'));assert.deepEqual(stored.projects.map(p=>p.id),[other.id]);
   assert.equal((await fetch(h.url+'/api/projects/'+project.id,{method:'DELETE',headers:{'Content-Type':'application/json'}})).status,404);
   assert.equal((await fetch(h.url+'/api/projects/'+other.id,{method:'DELETE',headers:{'Content-Type':'application/json'}})).status,200);
@@ -398,7 +397,7 @@ test('project deletion rejects pending generation and running exports without ch
   assert.equal((await remove()).status,409);
 });
 
-test('deleting a work removes it from the works list while retaining files and project references',async t=>{
+test('deleting a work permanently removes its file and project references',async t=>{
   const h=await harness(t),project=await threeShotProject(h),id=randomUUID();
   const path=resolve(h.temp,'missing/output/aigc-studio/retained.png');await mkdir(resolve(path,'..'),{recursive:true});await writeFile(path,'retained image');
   h.app.state.jobs.push({id,projectId:project.id,section:'image',status:'success',images:[],outputs:[{index:0,kind:'image',type:'output',filename:'retained.png',subfolder:'aigc-studio'}]});
@@ -406,10 +405,10 @@ test('deleting a work removes it from the works list while retaining files and p
   const remove=()=>fetch(h.url+'/api/jobs/'+id,{method:'DELETE',headers:{'Content-Type':'application/json'}});
   assert.equal((await remove()).status,200);const deletedAt=h.app.state.jobs[0].deletedAt;assert.ok(deletedAt);
   assert.deepEqual(await(await fetch(h.url+'/api/jobs')).json(),[]);
-  const snapshot=await(await fetch(h.url+'/api/projects/'+project.id)).json();assert.equal(snapshot.jobs[0].id,id);assert.equal(snapshot.project.shots[0].confirmedFrameJobId,id);
-  assert.equal(await readFile(path,'utf8'),'retained image');
+  const snapshot=await(await fetch(h.url+'/api/projects/'+project.id)).json();assert.equal(snapshot.jobs[0].id,id);assert.equal(snapshot.project.shots[0].confirmedFrameJobId,null);
+  await assert.rejects(readFile(path),e=>e.code==='ENOENT');
   assert.equal((await remove()).status,200);assert.equal(h.app.state.jobs[0].deletedAt,deletedAt);
-  const stored=JSON.parse(await readFile(resolve(h.temp,'data/state.json'),'utf8'));assert.equal(stored.jobs[0].deletedAt,deletedAt);assert.equal(stored.projects[0].shots[0].imageJobId,id);
+  const stored=JSON.parse(await readFile(resolve(h.temp,'data/state.json'),'utf8'));assert.equal(stored.jobs[0].deletedAt,deletedAt);assert.equal(stored.projects[0].shots[0].imageJobId,null);
   for(const status of ['failed','cancelled']){const other=randomUUID();h.app.state.jobs.push({id:other,status,images:[],outputs:[]});assert.equal((await fetch(h.url+'/api/jobs/'+other,{method:'DELETE',headers:{'Content-Type':'application/json'}})).status,200);}
   assert.deepEqual(await(await fetch(h.url+'/api/jobs')).json(),[]);
 });
@@ -421,7 +420,7 @@ test('work deletion rejects active tasks and foreign origins without interruptin
   assert.equal((await fetch(h.url+'/api/jobs/'+randomUUID(),{method:'DELETE',headers:{'Content-Type':'application/json'}})).status,404);assert.deepEqual(h.engine.cancelled,[]);
 });
 
-test('bulk work deletion persists all selected records once and retains files, project versions and unselected works',async t=>{
+test('bulk deletion clears selected files and versions while keeping unselected works',async t=>{
   const h=await harness(t),project=await threeShotProject(h);
   const records=['success','failed','cancelled','success'].map(status=>({id:randomUUID(),projectId:project.id,status,section:'image',images:[],outputs:[]}));
   const file=resolve(h.temp,'missing/output/aigc-studio/keep.png');await mkdir(resolve(file,'..'),{recursive:true});await writeFile(file,'retained output');
@@ -430,9 +429,9 @@ test('bulk work deletion persists all selected records once and retains files, p
   const ids=records.slice(0,3).map(j=>j.id),response=await h.post('/api/jobs/delete',{jobIds:ids});assert.equal(response.status,200);assert.deepEqual((await response.json()).deletedIds,ids);
   const date=records[0].deletedAt;assert.ok(date);assert.ok(records.slice(0,3).every(j=>j.deletedAt===date));assert.equal(records[3].deletedAt,undefined);
   assert.deepEqual((await(await fetch(h.url+'/api/jobs')).json()).map(j=>j.id),[records[3].id]);
-  const snapshot=await(await fetch(h.url+'/api/projects/'+project.id)).json();assert.equal(snapshot.project.shots[0].confirmedFrameJobId,records[0].id);assert.equal(snapshot.jobs.length,4);assert.equal(await readFile(file,'utf8'),'retained output');
+  const snapshot=await(await fetch(h.url+'/api/projects/'+project.id)).json();assert.equal(snapshot.project.shots[0].confirmedFrameJobId,null);assert.equal(snapshot.jobs.length,4);await assert.rejects(readFile(file),e=>e.code==='ENOENT');
   assert.equal((await h.post('/api/jobs/delete',{jobIds:ids})).status,200);assert.equal(records[0].deletedAt,date);
-  const stored=JSON.parse(await readFile(resolve(h.temp,'data/state.json'),'utf8'));assert.equal(stored.jobs.filter(j=>j.deletedAt).length,3);assert.equal(stored.projects[0].shots[0].imageJobId,records[0].id);
+  const stored=JSON.parse(await readFile(resolve(h.temp,'data/state.json'),'utf8'));assert.equal(stored.jobs.filter(j=>j.deletedAt).length,3);assert.equal(stored.projects[0].shots[0].imageJobId,null);
 });
 
 test('bulk deletion rejects any active or missing record atomically and never interrupts generation',async t=>{

@@ -52,8 +52,8 @@ export function shotPlan(project, shot, assets) {
   if(shot.driver&&referenceIds.length>=20)errors.push('白膜首帧占用一张参考位置，角色、场景与道具最多选择19张。');
   return {shotId:shot.id,promptMode:generalPrompt?'general':'detailed',imagePrompt:image,videoPrompt:video,video:videoOptions,referenceIds,refs:refs.filter(Boolean),size:frameSize,characterSignature:role.signature,frameSignature,videoSignature,errors,warnings};
 }
-export function frameMatches(project,shot,job,assets){const p=shotPlan(project,shot,assets);return Boolean(job?.status==='success'&&primaryOutput(job)?.kind==='image'&&(!p.characterSignature||job.characterSignature===p.characterSignature)&&(!p.frameSignature||job.frameSignature===p.frameSignature));}
-export function videoMatches(project,shot,job,assets){const p=shotPlan(project,shot,assets);return Boolean(job?.status==='success'&&primaryOutput(job)?.kind==='video'&&job.frameJobId===shot.confirmedFrameJobId&&(!p.characterSignature||job.characterSignature===p.characterSignature)&&(!p.videoSignature||job.videoSignature===p.videoSignature));}
+export function frameMatches(project,shot,job,assets){const p=shotPlan(project,shot,assets);return Boolean(job?.status==='success'&&!job.deletedAt&&primaryOutput(job)?.kind==='image'&&(!p.characterSignature||job.characterSignature===p.characterSignature)&&(!p.frameSignature||job.frameSignature===p.frameSignature));}
+export function videoMatches(project,shot,job,assets){const p=shotPlan(project,shot,assets);return Boolean(job?.status==='success'&&!job.deletedAt&&primaryOutput(job)?.kind==='video'&&job.frameJobId===shot.confirmedFrameJobId&&(!p.characterSignature||job.characterSignature===p.characterSignature)&&(!p.videoSignature||job.videoSignature===p.videoSignature));}
 export function validateEdit(value={}, job) {
   const count=primaryOutput(job)?.metadata?.frame_count;
   const edit={jobId:job?.id||null,inFrame:Number(value.inFrame??0),outFrame:value.outFrame==null||value.outFrame===''?null:Number(value.outFrame),gain:Number(value.gain??1),mute:Boolean(value.mute),fade:Number(value.fade??0.08),notes:String(value.notes||'').slice(0,1000)};
