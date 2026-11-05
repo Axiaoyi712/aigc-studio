@@ -338,7 +338,7 @@ export function createStudio(config, { appRoot = root, dataRoot = resolve(appRoo
       if (req.method === 'GET' && url.pathname === '/api/roadmap') {
         return send(res, 200, { content: await readFile(resolve(appRoot, '制作路线.md'), 'utf8') });
       }
-      const pages = { '/': 'index.html', '/app.js': 'app.js', '/style.css': 'style.css', '/icon.svg': 'icon.svg', '/favicon.ico': 'icon.svg', '/projects.js': 'projects.js', '/projects.css': 'projects.css', '/prompts.js': 'prompts.js', '/prompts.css': 'prompts.css', '/video-options.js': 'video-options.js', '/director-options.js':'director-options.js', '/upscale.js':'upscale.js', '/drivers.js':'drivers.js', '/production-ui.js':'production-ui.js', '/production.css':'production.css' };
+      const pages = { '/': 'index.html', '/app.js': 'app.js', '/style.css': 'style.css', '/icon.svg': 'icon.svg', '/favicon.ico': 'icon.svg', '/projects.js': 'projects.js', '/projects.css': 'projects.css', '/prompts.js': 'prompts.js', '/prompts.css': 'prompts.css', '/video-options.js': 'video-options.js', '/director-options.js':'director-options.js', '/upscale.js':'upscale.js', '/drivers.js':'drivers.js', '/drivers.css':'drivers.css', '/production-ui.js':'production-ui.js', '/production.css':'production.css' };
       if (req.method === 'GET' && pages[url.pathname]) {
         const file = pages[url.pathname];
         res.writeHead(200, { 'Content-Type': mime[extname(file)], 'Cache-Control': 'no-cache', 'X-Content-Type-Options': 'nosniff' });

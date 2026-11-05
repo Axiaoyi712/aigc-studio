@@ -1,4 +1,5 @@
-import { openProjects, closeProjects } from './projects.js';
+import { openProjects, closeProjects, focusProject } from './projects.js';
+import {openDriverStudio} from './drivers.js';
 import { upscaleMarkup,upscaleClick } from './upscale.js';
 import { showPromptPicker, openPromptPage } from './prompts.js';
 import { cameras, actions, styles, normalizeVideoOptions, composeVideoPrompt, videoDurations, videoProfileLabels, videoResolutionLabel } from './video-options.js';
@@ -8,6 +9,7 @@ const labels = { video: '视频创作', image: '图片创作', reference: '人�
 const statusNames = { submitting: '提交中', queued: '排队中', running: '生成中', recovering: '正在恢复连接', success: '已完成', failed: '失败', cancelled: '已停止' };
 const active = new Set(['submitting', 'queued', 'running', 'recovering']);
 let section = 'video';
+let videoMode=localStorage.getItem('aigc-video-mode')==='depth'?'depth':'image';
 let templates = [];
 let jobs = [];
 let connected = false;
@@ -94,8 +96,22 @@ function renderTemplate() {
   $('#submit-help').textContent = section === 'video' ? '首次加载模型可能较慢，请保持 ComfyUI 运行。' : '先生成候选图片，满意后可用作视频首帧。';
   updateButton();
 }
+function setVideoMode(value) {
+  videoMode=value==='depth'?'depth':'image';localStorage.setItem('aigc-video-mode',videoMode);
+  for(const button of document.querySelectorAll('[data-video-mode]'))button.setAttribute('aria-pressed',String(button.dataset.videoMode===videoMode));
+  if(section!=='video')return;
+  const depth=videoMode==='depth';$('#driver-studio').hidden=!depth;$('#create-panel').hidden=depth;$('.recent-section').hidden=depth;
+  $('#page-title').innerHTML=depth?'让动作，有新的主角<span>。</span>':'让想象，开始流动<span>。</span>';
+  $('#page-subtitle').textContent=depth?'导入白膜视频，设置片段与画质，再为镜头配置人物和场景。':'从一张图片出发，完成属于你的下一段影像。';
+  if(depth)void openDriverStudio();
+}
+for(const button of document.querySelectorAll('[data-video-mode]'))button.addEventListener('click',()=>setVideoMode(button.dataset.videoMode));
+window.addEventListener('aigc-open-project',async event=>{
+  try{await focusProject(event.detail.projectId,event.detail.step);switchSection('projects');window.scrollTo({top:0,behavior:'smooth'});}catch(error){notice(error.message,true);}
+});
 function switchSection(value) {
   section = value;
+  $('#video-mode-switch').hidden=value!=='video';$('#driver-studio').hidden=true;
   document.querySelectorAll('[data-section]').forEach(button => button.classList.toggle('selected', button.dataset.section === value));
   $('#projects-panel').hidden = value !== 'projects';
   $('#prompts-panel').hidden = value !== 'prompts';
@@ -133,6 +149,7 @@ function switchSection(value) {
     lastPreview = '';
     renderPreview();
   }
+  if(value==='video')setVideoMode(videoMode);
   renderJobs();
 }
 async function checkConnection(reloadTemplates = false) {
@@ -330,6 +347,7 @@ document.addEventListener('click', async event => {
       if (!response.ok) throw new Error('无法读取成品，请检查生成引擎连接。');
       const blob = await response.blob();
       const image = await uploadFile(new File([blob], 'first-frame.png', { type: blob.type }));
+      videoMode='image';
       selectedTemplates.video = 'h3-fast';
       uploaded.set('h3-fast', [image]);
       uploaded.set('h3-base', [image]);

@@ -56,6 +56,14 @@ export async function openProjects() {
   } catch (error) { visible = false; notice(error.message, true); }
 }
 export function closeProjects() { visible = false; }
+export async function focusProject(id,step=2) {
+  if(dirty||saving)await saveProject();
+  projects=await api('/api/projects');
+  if(!projects.some(p=>p.id===id))throw Error('项目已不存在，请重新选择。');
+  currentId=id;localStorage.setItem('aigc-step-'+id,String(step));
+  [assets,audio]=await Promise.all([api('/api/assets'),api('/api/audio')]);
+  await load(true);visible=true;
+}
 async function load(full) {
   if (currentId) {
     const requestedId = currentId;

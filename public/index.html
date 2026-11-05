@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="/style.css">
   <link rel="stylesheet" href="/projects.css">
   <link rel="stylesheet" href="/production.css">
+  <link rel="stylesheet" href="/drivers.css">
   <link rel="stylesheet" href="/prompts.css">
   <script src="/app.js" type="module"></script>
 </head>
@@ -39,6 +40,8 @@
       <div class="notice success" id="notice" role="status" hidden></div>
       <section id="projects-panel" hidden></section>
       <section id="prompts-panel" hidden></section>
+      <div id="video-mode-switch" class="video-mode-switch" role="group" aria-label="视频创作方式"><button type="button" data-video-mode="image" aria-pressed="true"><strong>图片生成视频</strong><small>上传首帧，用描述引导动作</small></button><button type="button" data-video-mode="depth" aria-pressed="false"><strong>白膜驱动视频</strong><small>沿用白膜动作，替换人物与场景</small></button></div>
+      <section id="driver-studio" class="driver-studio" aria-label="白膜驱动视频" hidden></section>
       <section id="create-panel" class="workspace">
         <form id="create-form" class="control-panel">
           <div class="panel-label"><span>创作设置</span><small>01 — CREATE</small></div>

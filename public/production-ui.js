@@ -1,6 +1,5 @@
 import { framing, angles, cameraMoves, directorText, stateFields, normalizeDirector, normalizeProduction, imageSize } from './director-options.js';
 import { videoDurations } from './video-options.js';
-import {mountDrivers,driverClick} from './drivers.js';
 const h=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const options=(items,value)=>Object.entries(items).map(([id,name])=>`<option value="${h(id)}" ${String(value)===id?'selected':''}>${h(name)}</option>`).join('');
 let context,step=1,previsTimer,assistantResult;
@@ -41,7 +40,6 @@ export function mountProductionUI(value){
   const panel=n=>workspace.querySelector(`[data-production-panel="${n}"]`);
   for(const selector of ['.project-meta','.project-video-specs','#project-video-description','.project-script']){const node=$(selector);if(node)panel(1).append(node);}
   panel(1).insertAdjacentHTML('beforeend',settingsMarkup());
-  mountDrivers(context,panel(1));
   for(const selector of ['.asset-library','.project-characters']){const node=$(selector);if(node)panel(2).append(node);}
   panel(2).insertAdjacentHTML('beforeend',referencesMarkup());
   const actions=$('.project-actions');const shots=$('#shot-list');panel(3).append(shots);workspace.before(actions);
@@ -98,7 +96,6 @@ const joinShot=s=>[s.imagePrompt,s.videoPrompt,s.director?.action].filter(Boolea
 function assistantSummary(result){const item=s=>[`首帧画面：${s.imagePrompt||''}`,`镜头动作：${s.videoPrompt||''}`,s.director?.position&&`站位：${s.director.position}`,s.director?.sound&&`声音：${s.director.sound}`].filter(Boolean).join('\n');return result.kind==='translate'?result.content.translation:result.kind==='storyboard'?result.content.shots.map((s,i)=>`${i+1}. ${s.title||'镜头'}\n${item(s)}`).join('\n\n'):item(result.content);}
 function production(){if(!get().production)get().production=normalizeProduction({},context.assets);return get().production;}
 export async function productionClick(button){
-  if(await driverClick(button))return true;
   if(button.dataset.driverCompare){
     const snapshot=context.getSnapshot(),shot=snapshot.project.shots.find(s=>s.id===button.dataset.driverCompare),video=snapshot.jobs.find(j=>j.id===shot?.videoJobId);
     if(!shot?.driver||!video?.outputs[0])throw Error('请先完成此镜头视频。');
