@@ -2,7 +2,6 @@
 import argparse
 import json
 import os
-import math
 from pathlib import Path
 import sys
 import av
@@ -79,25 +78,16 @@ def load_enhancer(comfy_root, model_path):
     return enhance
 
 
-def delivery_size(width, height, minimum):
-    scale = max(1, minimum / min(width, height))
-    return math.ceil(width * scale / 2) * 2, math.ceil(height * scale / 2) * 2
-
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('source')
     parser.add_argument('output')
     parser.add_argument('comfy_root')
     parser.add_argument('model')
-    parser.add_argument('--delivery', choices=['720p', '1080p'])
     args = parser.parse_args()
     with av.open(args.source) as video:
         w, h = video.streams.video[0].width, video.streams.video[0].height
     width, height = (1080, 1920) if h > w else (1080, 1080) if h == w else (1920, 1080)
-    if args.delivery:
-        minimum = 720 if args.delivery == '720p' else 1080
-        width, height = delivery_size(w, h, minimum)
     enhance = load_enhancer(args.comfy_root, args.model)
     def progress(value, maximum):
         print(json.dumps({'progress': {'value': value, 'max': maximum}}), flush=True)

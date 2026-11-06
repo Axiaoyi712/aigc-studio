@@ -12,7 +12,7 @@ test('manual filesystem deletion removes project references instead of restoring
  const h=fixture(t);h.storage.sync();unlinkSync(h.file);assert.equal(h.life.reconcile(),true);assert.ok(h.state.jobs[0].deletedAt);assert.equal(h.state.projects[0].shots[0].imageJobId,null);assert.deepEqual(h.state.assets,[]);h.storage.sync();assert.equal(existsSync(h.file),false);assert.equal(h.life.reconcile(),false);
 });
 test('external-folder deletion removes that project, but an externally linked source remains protected',t=>{
- const h=fixture(t);h.storage.sync();const external=resolve(h.dir,'original.mp4');writeFileSync(external,'external original');h.state.driverVideos=[{id:'v',projectId:'project',sourcePath:external,imported:false}];const folder=h.storage.projectFolder(h.state.projects[0]);rmSync(folder,{recursive:true});assert.equal(h.life.reconcile(),true);assert.equal(h.state.projects.length,0);assert.equal(readFileSync(external,'utf8'),'external original');
+ const h=fixture(t);h.storage.sync();const external=resolve(h.dir,'original.mp4');writeFileSync(external,'external original');const folder=h.storage.projectFolder(h.state.projects[0]);rmSync(folder,{recursive:true});assert.equal(h.life.reconcile(),true);assert.equal(h.state.projects.length,0);assert.equal(readFileSync(external,'utf8'),'external original');
 });
 test('paths escaping the controlled roots are rejected before any file is deleted',t=>{
  const h=fixture(t),external=resolve(h.dir,'keep.mp4');writeFileSync(external,'must retain');assert.throws(()=>h.life.detach([h.file,external]),/管理范围/);assert.equal(existsSync(h.file),true);assert.equal(readFileSync(external,'utf8'),'must retain');

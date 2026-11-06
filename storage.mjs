@@ -28,8 +28,8 @@ export function createStorage(config,state,dataRoot){
   for(const j of state.jobs||[])if(!j.deletedAt)for(const f of j.outputs||[]){const path=localMedia(config,f);if(path?.startsWith(root+sep)&&existsSync(path)&&!contents.has(digest(path)))contents.set(digest(path),path);}
   for(const j of state.jobs||[]){if(j.status!=='success'||j.deletedAt)continue;for(const [index,f] of (j.outputs||[]).entries()){if(f.type!=='output')continue;const source=localMedia(config,f);if(!source||!existsSync(source))continue;const p=state.projects?.find(p=>p.id===j.projectId),s=p?.shots.find(s=>s.id===j.shotId),history=s?.[j.section==='video'?'videoHistory':'imageHistory']||[];const name=(j.section==='video'?'视频':'首帧')+'_v'+String(history.indexOf(j.id)+1||1).padStart(3,'0')+'_'+short(j.id)+'_'+index+extname(f.filename);const stored=intern(source,resolve(jobFolder(j),name));Object.assign(f,stored.file,{sha256:stored.hash});}}
   for(const [id,u] of Object.entries(state.uploads||{})){
-   const path=uploadPath(config,u),asset=state.assets?.find(a=>a.uploadId===id),clip=state.driverClips?.find(c=>c.firstFrameUploadId===id),p=state.projects?.find(p=>p.id===clip?.projectId);
-   const folder=p?resolve(projectFolder(p),'驱动素材'):resolve(root,'公共素材库',({character:'角色',scene:'场景',prop:'道具',style:'风格'}[asset?.category])||'上传');
+   const path=uploadPath(config,u),asset=state.assets?.find(a=>a.uploadId===id);
+   const folder=resolve(root,'公共素材库',({character:'角色',scene:'场景',prop:'道具',style:'风格'}[asset?.category])||'上传');
    const stored=intern(path,resolve(folder,(asset?clean(asset.name)+'_':'')+short(id)+extname(u.file?.filename||u.name)));
    if(stored){u.file=stored.file;u.sha256=stored.hash;}
   }
@@ -41,8 +41,6 @@ export function createStorage(config,state,dataRoot){
    for(const r of p.characters||[])write(resolve(base,'角色',clean(r.name)+'_'+short(r.id),'人物设定.txt'),r.name+'\n'+(r.description||'')+'\n'+(r.identity||'')+'\n'+(r.wardrobe||''));
    for(const s of p.shots){const folder=shotFolder(p,s);for(const name of ['首帧','视频'])mkdirSync(resolve(folder,name),{recursive:true});write(resolve(folder,'镜头说明.txt'),['镜头：'+s.title,'总提示词：'+(s.generalPrompt||''),'首帧描述：'+s.imagePrompt,'视频描述：'+s.videoPrompt,'已确认首帧任务：'+(s.confirmedFrameJobId||'未确认'),'选用视频任务：'+(s.videoJobId||'未选用'),JSON.stringify(s.director||{},null,2)].join('\n'));}
   }
-  for(const v of state.driverVideos||[]){if(!v.imported)continue;const p=state.projects?.find(p=>p.id===v.projectId);if(!p)continue;const stored=intern(v.sourcePath,resolve(projectFolder(p),'驱动素材',v.id+extname(v.sourcePath)));if(stored){v.sourcePath=stored.path;const s=statSync(stored.path);v.bytes=s.size;v.mtime=s.mtimeMs;}}
-  for(const c of state.driverClips||[]){const p=state.projects?.find(p=>p.id===c.projectId);if(!p)continue;const stored=intern(resolve(output,c.file),resolve(projectFolder(p),'驱动素材',c.id,'depth.mp4'));if(stored)c.file=relative(output,stored.path).split(sep).join('/');for(const s of p.shots)if(s.driver?.id===c.id)s.driver=c;}
   for(const a of state.audioAssets||[]){const stored=intern(a.storagePath||resolve(dataRoot,'audio',a.filename),resolve(root,'公共素材库','音频',a.id+extname(a.filename)));if(stored)a.storagePath=stored.path;}
   for(const p of state.projects||[]){const base=projectFolder(p);for(const e of (state.exports||[]).filter(e=>e.projectId===p.id&&e.status==='success')){const stored=intern(e.storagePath||resolve(dataRoot,'exports',e.id+'.mp4'),resolve(base,'成片','成片_'+short(e.id)+'.mp4'));if(stored)e.storagePath=stored.path;}
    write(resolve(base,'项目资料','项目记录.json'),{schemaVersion:2,project:p,assets:(state.assets||[]).filter(a=>a.projectFiles?.[p.id]),jobs:(state.jobs||[]).filter(j=>j.projectId===p.id&&!j.deletedAt),exports:(state.exports||[]).filter(e=>e.projectId===p.id),mediaPolicy:'single-file-reference'});

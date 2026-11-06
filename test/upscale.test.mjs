@@ -7,7 +7,7 @@ function harness(t){
  const shot={id:randomUUID(),title:'镜头',videoHistory:[],imageHistory:[],videoJobId:null,referenceIds:[]},project={id:randomUUID(),name:'测试',shots:[shot],characters:[]};
  const source={id:randomUUID(),template:'h3-fast',section:'video',title:'原片',status:'success',projectId:project.id,shotId:shot.id,frameJobId:randomUUID(),characterSignature:'character',frameSignature:'frame',videoSignature:'video',outputs:[{index:0,type:'output',kind:'video',filename:'source.mp4',subfolder:'aigc-studio'}]};shot.videoJobId=source.id;shot.videoHistory.push(source.id);
  const state={jobs:[source],projects:[project],assets:[],uploads:{},exports:[]},storage=createStorage(config,state,resolve(dir,'data')),events=[];let child,args,busy=false;
- const controller=createUpscaler({state,config,appRoot:dir,save:()=>storage.sync(),send:(res,status,data)=>Object.assign(res,{status,data}),readBody:async()=>Buffer.from('{}'),probeSource:async()=>({width:512,height:320,fps:24}),json:async(path)=>{events.push(path);return path==='/queue'?{queue_running:[],queue_pending:[]}:{};},post:async path=>events.push(path),publicJob:j=>structuredClone(j),isBusy:()=>busy,release:async()=>events.push('release'),spawnProcess:(exe,argv)=>{args=argv;child=new EventEmitter();child.stdout=new EventEmitter();child.stderr=new EventEmitter();child.kill=()=>queueMicrotask(()=>child.emit('close',null));return child;}});
+ const controller=createUpscaler({state,config,appRoot:dir,save:()=>storage.sync(),send:(res,status,data)=>Object.assign(res,{status,data}),readBody:async()=>Buffer.from('{}'),json:async(path)=>{events.push(path);return path==='/queue'?{queue_running:[],queue_pending:[]}:{};},post:async path=>events.push(path),publicJob:j=>structuredClone(j),isBusy:()=>busy,release:async()=>events.push('release'),spawnProcess:(exe,argv)=>{args=argv;child=new EventEmitter();child.stdout=new EventEmitter();child.stderr=new EventEmitter();child.kill=()=>queueMicrotask(()=>child.emit('close',null));return child;}});
  const request=async(id,operation='upscale',method='POST')=>{const res={};await controller.handle({method},res,new URL('http://localhost/api/jobs/'+id+'/'+operation));return res;};
  return {dir,config,state,source,shot,controller,request,events,setBusy:v=>busy=v,get child(){return child;},get args(){return args;}};
 }
@@ -26,18 +26,4 @@ test('cancellation preserves original and permits retry after the child exits',a
 });
 test('failed refinement does not add an unusable version or change the selected source',async t=>{
  const h=harness(t);await h.request(h.source.id);const job=h.state.jobs[0];h.child.stderr.emit('data',Buffer.from('CUDA fixture failure'));h.child.emit('close',1);assert.equal(job.status,'failed');assert.match(job.error,/CUDA/);assert.deepEqual(h.shot.videoHistory,[h.source.id]);assert.equal(h.shot.videoJobId,h.source.id);
-});
-
-test('automatic delivery requires a real720p result, selects it once and preserves source and aspect arguments',async t=>{
- const h=harness(t);h.source.video={delivery:'720p'};assert.equal(await h.controller.tick(),true);const job=h.state.jobs[0];
- assert.equal(h.source.deliveryStatus,'running');assert.deepEqual(h.args.slice(-2),['--delivery','720p']);assert.equal(job.enhancement.nativeWidth,512);
- writeFileSync(h.args[3],'real model output fixture');h.child.stdout.emit('data',Buffer.from('{"metadata":{"width":1152,"height":720,"frame_count":73}}\n'));h.child.emit('close',0);
- assert.equal(job.status,'success');assert.equal(h.source.deliveryStatus,'success');assert.equal(h.shot.videoJobId,job.id);assert.equal(await h.controller.tick(),false);
- assert.equal(readFileSync(requireMedia(h.config,primaryOutput(h.source)),'utf8'),'original bytes');
-});
-test('automatic delivery never marks undersized output as completed or overwrites a user-chosen version',async t=>{
- const h=harness(t);h.source.video={delivery:'720p'};await h.controller.tick();const job=h.state.jobs[0];writeFileSync(h.args[3],'undersized');
- h.child.stdout.emit('data',Buffer.from('{"metadata":{"width":640,"height":384}}\n'));h.child.emit('close',0);
- assert.equal(job.status,'failed');assert.equal(h.source.deliveryStatus,'failed');assert.equal(h.shot.videoJobId,h.source.id);
- const other=harness(t);other.source.video={delivery:'720p'};await other.controller.tick();const hd=other.state.jobs[0];other.shot.videoJobId='manually-selected';writeFileSync(other.args[3],'HD');other.child.stdout.emit('data',Buffer.from('{"metadata":{"width":1152,"height":720}}\n'));other.child.emit('close',0);assert.equal(hd.status,'success');assert.equal(other.shot.videoJobId,'manually-selected');
 });

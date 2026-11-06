@@ -13,7 +13,7 @@ const active = new Set(['submitting', 'queued', 'running', 'recovering']);
 const pending = item => ['waiting', 'dispatched'].includes(item.status);
 function fail(message, status = 400) { throw Object.assign(new Error(message), { status }); }
 function text(value, limit = 6000) { return String(value ?? '').trim().slice(0, limit); }
-export function createProjects({ state, save, submitJob, refresh, json, upstream, publicJob, config, appRoot, dataRoot, send, readBody, isEnhancing=()=>false,finalizeVideos=async()=>false,resolveDriver,removeProject }) {
+export function createProjects({ state, save, submitJob, refresh, json, upstream, publicJob, config, appRoot, dataRoot, send, readBody, isEnhancing=()=>false,removeProject }) {
   state.projects ??= [];
   state.assets ??= [];
   state.batchQueue ??= [];
@@ -60,7 +60,6 @@ export function createProjects({ state, save, submitJob, refresh, json, upstream
     try {
       await refresh(); updateItems();
       if (state.queuePaused || exporting || isEnhancing() || state.jobs.some(job => active.has(job.status))) return;
-      if(await finalizeVideos())return;
       const item = state.batchQueue.find(item => item.status === 'waiting');
       if (!item) return;
       const queue = await json('/queue');
@@ -115,15 +114,13 @@ export function createProjects({ state, save, submitJob, refresh, json, upstream
       const character = characterContext(project, shot);
       const plan = shotPlan(project,kind==='video'&&newFrameId?{...shot,confirmedFrameJobId:newFrameId}:shot,state.assets);
       if (plan.errors.length) fail(`镜头「${shot.title}」：${plan.errors.join('；')}`);
-      const driver=shot.driver?resolveDriver(shot.driver.id,project.id):null;
       if (kind === 'image') {
         const assets = plan.referenceIds.map(id => state.assets.find(asset => asset.id === id) ?? fail('参考素材已不存在。'));
         if (assets.length > 20) fail(`镜头「${shot.title}」的全部参考合计超过 20 张，请减少参考图。`);
         input = { template: assets.length > 3 ? 'flux-multi' : ['z-image','flux-edit','flux-2ref','flux-3ref'][assets.length], prompt: plan.imagePrompt, images: assets.map(asset => asset.uploadId), seed: shot.seed, size: plan.size };
-        if(driver){input.images.unshift(driver.firstFrameUploadId);if(input.images.length>20)fail('白膜首帧加角色、场景参考合计不能超过20张。');input.template=input.images.length>3?'flux-multi':['z-image','flux-edit','flux-2ref','flux-3ref'][input.images.length];}
         for (const asset of assets) { const upload=state.uploads[asset.uploadId]; if(!upload) fail('参考图上传记录缺失。'); requireMedia(config,uploadFile(upload)); }
       } else {
-        if (!driver && project.videoTemplate === 'h3-reference' && plan.referenceIds.length > 3) fail('Ref2VA 实验视频最多使用 3 张资产参考加 1 张分镜图；20 张参考目前用于首帧生成。');
+        if (project.videoTemplate === 'h3-reference' && plan.referenceIds.length > 3) fail('Ref2VA 实验视频最多使用 3 张资产参考加 1 张分镜图；20 张参考目前用于首帧生成。');
         if(newFrameId)frameJobId=newFrameId;
         else{
           const frame = imageJob(shot.confirmedFrameJobId);
@@ -133,7 +130,6 @@ export function createProjects({ state, save, submitJob, refresh, json, upstream
         }
         const images=project.videoTemplate==='h3-reference'?plan.refs.map(a=>a.uploadId):[];
         input = { template: project.videoTemplate, prompt: plan.videoPrompt, images, seed: shot.seed, size: '512x512', video: { ...plan.video, camera: 'none', action: 'none', shot: 'none', style: 'preserve', pace: 'none' } };
-        if(driver){input.template='h3-depth';input.driverClipId=driver.id;input.video={...input.video,sound:'mute',delivery:project.video?.delivery==='1080p'?'1080p':'720p'};}
       }
       if (input.prompt.length > 6000) fail(`镜头「${shot.title}」合并后的描述超过 6000 字。`);
       items.push({ id: kind==='image'&&newFrameId?newFrameId:randomUUID(), batchId, projectId: project.id, shotId: shot.id, kind, frameJobId, ...(kind==='video'&&newFrameId?{dependsOnId:newFrameId,autoConfirmFrame:true}:{}), characterSignature: character.signature, frameSignature: plan.frameSignature, videoSignature: plan.videoSignature, productionSnapshot: { production: structuredClone(project.production||{}), director: structuredClone(shot.director||{}), generalPrompt:shot.generalPrompt||undefined, references: plan.refs.map(a=>({id:a.id,name:a.name,uploadId:a.uploadId})), imagePrompt: plan.imagePrompt, videoPrompt: plan.videoPrompt, size: plan.size, videoTemplate: project.videoTemplate }, input, status: 'waiting', createdAt: new Date().toISOString() });
@@ -197,10 +193,6 @@ export function createProjects({ state, save, submitJob, refresh, json, upstream
     if (exporting || isEnhancing() || state.jobs.some(job => active.has(job.status)) || state.batchQueue.some(pending)) fail('请先完成或取消队列中的任务，再拼接导出。', 409);
     if (!project.shots.length) fail('项目中还没有镜头。');
     const videos = project.shots.map(shot => currentVideo(shot, project) ?? fail(`镜头「${shot.title}」还没有与当前角色及确认首帧对应的成功视频。`));
-    for(const job of videos)if(['720p','1080p'].includes(project.video?.delivery)||['720p','1080p'].includes(job.video?.delivery)){
-      const required=(project.video?.delivery||job.video.delivery)==='1080p'?1080:720,meta=primaryOutput(job)?.metadata;
-      if(!meta||Math.min(meta.width,meta.height)<required)fail('所选视频还未完成高清精修，请等待完成或在版本列表选用高清版后导出。');
-    }
     const paths = videos.map(localVideo);
     const python = config.pythonPath || resolve(config.comfyRoot, '../python_embeded/python.exe');
     if (!existsSync(python)) fail('没有找到用于拼接的 ComfyUI Python 环境。');
@@ -211,9 +203,6 @@ export function createProjects({ state, save, submitJob, refresh, json, upstream
     const clips=videos.map((job,index)=>({path:paths[index],...validateEdit(project.shots[index].edit,job)}));
     const render={clips};
     if(project.production){const [width,height]=project.production.exportSize.split('x').map(Number);render.canvas={width,height,fps:24};}
-    else if(project.shots.some(s=>s.driver)){const d=project.shots.find(s=>s.driver).driver,scale=720/Math.min(d.width,d.height);render.canvas={width:Math.ceil(d.width*scale/2)*2,height:Math.ceil(d.height*scale/2)*2,fps:24};}
-    const deliveryFloor=Math.max(0,...videos.map(j=>[project.video?.delivery,j.video?.delivery].some(v=>v==='1080p')?1080:[project.video?.delivery,j.video?.delivery].some(v=>v==='720p')?720:0));
-    if(render.canvas&&Math.min(render.canvas.width,render.canvas.height)<deliveryFloor){const scale=deliveryFloor/Math.min(render.canvas.width,render.canvas.height);render.canvas.width=Math.ceil(render.canvas.width*scale/2)*2;render.canvas.height=Math.ceil(render.canvas.height*scale/2)*2;}
     if(project.production?.backgroundAudioId){const audio=state.audioAssets?.find(a=>a.id===project.production.backgroundAudioId);if(!audio)fail('背景音已不存在，请重新选择。');const audioPath=audio.storagePath||resolve(dataRoot,'audio',audio.filename);if(!existsSync(audioPath))fail('背景声音文件缺失。');render.background={path:audioPath,gain:project.production.backgroundGain};}
     writeFileSync(manifest, JSON.stringify(render));
     const item = { id, projectId: project.id, title: project.name, status: 'running', jobIds: videos.map(job => job.id), createdAt: new Date().toISOString(), completed: 0, total: paths.length };
@@ -282,7 +271,7 @@ export function createProjects({ state, save, submitJob, refresh, json, upstream
         else if (req.method === 'POST') {
           if (!text(body.name, 80)) fail('请填写项目名称。');
           result = { id: randomUUID(), name: text(body.name, 80), script: '', videoTemplate: 'h3-fast', shots: [], createdAt: new Date().toISOString() };
-          if(body.production){try{result.production=normalizeProduction(body.production,state.assets);result.video=normalizeVideoOptions({aspect:'landscape',delivery:'720p'});}catch(error){fail(error.message);}}
+          if(body.production){try{result.production=normalizeProduction(body.production,state.assets);result.video=normalizeVideoOptions({aspect:'landscape'});}catch(error){fail(error.message);}}
           state.projects.push(result); save(); status = 201;
         } else fail('接口不存在。', 404);
       } else {

@@ -13,7 +13,6 @@ import { createProjectFiles } from './project-files.mjs';
 import { createAssistant } from './assistant.mjs';
 import { createStorage } from './storage.mjs';
 import { createUpscaler } from './upscale.mjs';
-import { createDrivers } from './drivers.mjs';
 import {createMediaLifecycle} from './media-lifecycle.mjs';
 import {uploadFile} from './uploads.mjs';
 
@@ -96,11 +95,10 @@ export function createStudio(config, { appRoot = root, dataRoot = resolve(appRoo
     const primary = primaryOutput(job);
     return { ...job, outputs: (job.outputs ?? []).map(file => ({ ...file, url: `/api/media/${job.id}/${file.index}` })).sort((a, b) => Number(b.index === primary?.index) - Number(a.index === primary?.index)) };
   }
-  function workflowSnapshot(prompt,source='submission') { return {version:'0.7.0',source,capturedAt:new Date().toISOString(),sha256:createHash('sha256').update(JSON.stringify(prompt)).digest('hex'),models:Object.values(prompt).flatMap(n=>['unet_name','clip_name','vae_name','lora_name',...(n.class_type==='ModelPatchLoader'?['name']:[])].filter(k=>n.inputs[k]).map(k=>n.inputs[k])),graph:structuredClone(prompt)}; }
+  function workflowSnapshot(prompt,source='submission') { return {version:'0.6.0',source,capturedAt:new Date().toISOString(),sha256:createHash('sha256').update(JSON.stringify(prompt)).digest('hex'),models:Object.values(prompt).flatMap(n=>['unet_name','clip_name','vae_name','lora_name'].filter(k=>n.inputs[k]).map(k=>n.inputs[k])),graph:structuredClone(prompt)}; }
   function mediaOutputs(history) {
     const files = [];
-    for (const [nodeId,output] of Object.entries(history.outputs ?? {})) {
-      if(history.prompt?.[2]?.[nodeId]?.class_type==='LoadVideo')continue;
+    for (const output of Object.values(history.outputs ?? {})) {
       for (const kind of ['images', 'gifs', 'videos', 'audio']) {
         for (const file of output[kind] ?? []) {
           if (!file.filename || files.some(item => item.filename === file.filename && item.subfolder === file.subfolder)) continue;
@@ -181,8 +179,7 @@ export function createStudio(config, { appRoot = root, dataRoot = resolve(appRoo
     const id = body.requestId ?? randomUUID();
     if (!/^[a-f0-9-]{36}$/.test(id)) throw fault('任务编号无效。');
     const graph = await loadGraph(appRoot, input.template);
-    const driver=input.template==='h3-depth'?drivers.clip(input.driverClipId,context.projectId):undefined;
-    const prompt = compileGraph(graph, { ...input, images, driver, storagePrefix: storage.prefix(context,id,templates.find(t=>t.id===input.template).section) }, id);
+    const prompt = compileGraph(graph, { ...input, images, storagePrefix: storage.prefix(context,id,templates.find(t=>t.id===input.template).section) }, id);
     const issues = checkGraph(prompt, await nodeInfo());
     if (issues.length) throw fault(issues.join('\n'));
     return { input, id, prompt };
@@ -210,13 +207,12 @@ export function createStudio(config, { appRoot = root, dataRoot = resolve(appRoo
       save(); return job;
     } finally { submitting = false; }
   }
-  const drivers=createDrivers({state,save,config,appRoot,storage,send,readBody});
-  const projects = createProjects({ state, save, submitJob, refresh, json, upstream, publicJob, config, appRoot, dataRoot, send, readBody, isEnhancing:()=>upscale.busy()||drivers.busy(), finalizeVideos:()=>upscale.tick(),resolveDriver:(id,pid)=>drivers.clip(id,pid),removeProject:id=>lifecycle.removeProject(id) });
+  const projects = createProjects({ state, save, submitJob, refresh, json, upstream, publicJob, config, appRoot, dataRoot, send, readBody, isEnhancing:()=>upscale.busy(),removeProject:id=>lifecycle.removeProject(id) });
   const prompts = createPromptLibrary({ state, save, appRoot, dataRoot, config, send, readBody });
   const projectFiles = createProjectFiles({state,save,config,appRoot,dataRoot,send,readBody});
   const assistant = createAssistant({config,state,save,dataRoot,json,send,readBody,isGenerating:()=>submitting||projects.isExporting()||upscale.busy()||state.jobs.some(j=>activeStates.has(j.status))});
   const upscale=createUpscaler({state,save,config,appRoot,send,readBody,json,post,publicJob,isBusy:()=>submitting||projects.isExporting()||state.jobs.some(j=>activeStates.has(j.status))||state.batchQueue.some(q=>['waiting','dispatched'].includes(q.status)),release:()=>assistant.release()});
-  const timer = setInterval(() => { connectEvents(); if(!submitting&&!upscale.busy()&&!drivers.busy()&&!projects.isExporting()&&!state.jobs.some(j=>activeStates.has(j.status))&&!state.batchQueue.some(q=>['waiting','dispatched'].includes(q.status))){try{if(lifecycle.reconcile())save();}catch(error){console.error('媒体同步暂未完成：',error.message);}} void projects.tick(); }, 3000);
+  const timer = setInterval(() => { connectEvents(); if(!submitting&&!upscale.busy()&&!projects.isExporting()&&!state.jobs.some(j=>activeStates.has(j.status))&&!state.batchQueue.some(q=>['waiting','dispatched'].includes(q.status))){try{if(lifecycle.reconcile())save();}catch(error){console.error('媒体同步暂未完成：',error.message);}} void projects.tick(); }, 3000);
   timer.unref();
   for (const job of state.jobs) if (activeStates.has(job.status)) job.status = 'recovering';
 
@@ -226,11 +222,10 @@ export function createStudio(config, { appRoot = root, dataRoot = resolve(appRoo
       if (!['127.0.0.1', 'localhost'].includes(url.hostname)) throw fault('仅支持本机访问。', 403);
       if (!['GET', 'HEAD'].includes(req.method)) {
         if (req.headers.origin && req.headers.origin !== url.origin) throw fault('请求来源不匹配。', 403);
-        if (!url.pathname.startsWith('/api/uploads') && url.pathname!=='/api/audio' && url.pathname!=='/api/projects/import' && !/^\/api\/projects\/[a-f0-9-]+\/drivers$/.test(url.pathname) && req.headers['content-type']?.split(';')[0] !== 'application/json') throw fault('请求必须使用 JSON。', 415);
+        if (!url.pathname.startsWith('/api/uploads') && url.pathname!=='/api/audio' && url.pathname!=='/api/projects/import' && req.headers['content-type']?.split(';')[0] !== 'application/json') throw fault('请求必须使用 JSON。', 415);
       }
       if (await storage.handle(req,res,url,send)) return;
       if (await upscale.handle(req,res,url)) return;
-      if (await drivers.handle(req,res,url)) return;
       if (await assistant.handle(req,res,url)) return;
       if (await projectFiles.handle(req,res,url)) return;
       if (await projects.handle(req, res, url)) return;
@@ -264,7 +259,7 @@ export function createStudio(config, { appRoot = root, dataRoot = resolve(appRoo
         const targets = jobIds.map(id => state.jobs.find(job => job.id === id));
         if (targets.some(job => !job)) throw fault('所选作品中有不存在的记录，本次未删除任何作品。', 404);
         if (targets.some(job => activeStates.has(job.status))) throw fault('所选内容中有正在生成的任务，请等待结束后再删除。本次未删除任何作品。', 409);
-        if(submitting||upscale.busy()||drivers.busy()||projects.isExporting()||state.jobs.some(j=>activeStates.has(j.status))||state.batchQueue.some(q=>['waiting','dispatched'].includes(q.status)))throw fault('请先完成或取消生成队列，再彻底删除媒体。',409);
+        if(submitting||upscale.busy()||projects.isExporting()||state.jobs.some(j=>activeStates.has(j.status))||state.batchQueue.some(q=>['waiting','dispatched'].includes(q.status)))throw fault('请先完成或取消生成队列，再彻底删除媒体。',409);
         const pending = targets;
         if (pending.length) {
           lifecycle.removeJobs(pending.map(j=>j.id));
@@ -308,7 +303,7 @@ export function createStudio(config, { appRoot = root, dataRoot = resolve(appRoo
         const job = state.jobs.find(item => item.id === deleteWork[1]);
         if (!job) throw fault('作品或任务不存在。', 404);
         if (activeStates.has(job.status)) throw fault('此任务仍在运行，请先停止任务并等待结束后再删除。', 409);
-        if(submitting||upscale.busy()||drivers.busy()||projects.isExporting()||state.jobs.some(j=>activeStates.has(j.status))||state.batchQueue.some(q=>['waiting','dispatched'].includes(q.status)))throw fault('请先完成或取消生成队列，再彻底删除媒体。',409);
+        if(submitting||upscale.busy()||projects.isExporting()||state.jobs.some(j=>activeStates.has(j.status))||state.batchQueue.some(q=>['waiting','dispatched'].includes(q.status)))throw fault('请先完成或取消生成队列，再彻底删除媒体。',409);
         lifecycle.removeJobs([job.id]);save();
         return send(res, 200, { deleted: true, id: job.id, filesPreserved: false });
       }
@@ -342,7 +337,7 @@ export function createStudio(config, { appRoot = root, dataRoot = resolve(appRoo
       if (req.method === 'GET' && url.pathname === '/api/roadmap') {
         return send(res, 200, { content: await readFile(resolve(appRoot, '制作路线.md'), 'utf8') });
       }
-      const pages = { '/': 'index.html', '/app.js': 'app.js', '/style.css': 'style.css', '/icon.svg': 'icon.svg', '/favicon.ico': 'icon.svg', '/projects.js': 'projects.js', '/projects.css': 'projects.css', '/prompts.js': 'prompts.js', '/prompts.css': 'prompts.css', '/video-options.js': 'video-options.js', '/director-options.js':'director-options.js', '/upscale.js':'upscale.js', '/drivers.js':'drivers.js', '/drivers.css':'drivers.css', '/production-ui.js':'production-ui.js', '/production.css':'production.css' };
+      const pages = { '/': 'index.html', '/app.js': 'app.js', '/style.css': 'style.css', '/icon.svg': 'icon.svg', '/favicon.ico': 'icon.svg', '/projects.js': 'projects.js', '/projects.css': 'projects.css', '/prompts.js': 'prompts.js', '/prompts.css': 'prompts.css', '/video-options.js': 'video-options.js', '/director-options.js':'director-options.js', '/upscale.js':'upscale.js', '/production-ui.js':'production-ui.js', '/production.css':'production.css' };
       if (req.method === 'GET' && pages[url.pathname]) {
         const file = pages[url.pathname];
         res.writeHead(200, { 'Content-Type': mime[extname(file)], 'Cache-Control': 'no-cache', 'X-Content-Type-Options': 'nosniff' });

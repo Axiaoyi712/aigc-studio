@@ -10,21 +10,14 @@ export function createMediaLifecycle({state,config,dataRoot,storage}){
   const p=resolve(path),roots=[output,resolve(config.comfyRoot,'temp'),resolve(config.comfyRoot,'input/aigc-studio'),resolve(dataRoot,'audio'),resolve(dataRoot,'archives'),resolve(dataRoot,'exports')];
   if(!roots.some(r=>key(p).startsWith(key(r)+sep)&&(!existsSync(p)||key(realpathSync(p)).startsWith(key(realpathSync(r))+sep))))throw fault('拒绝删除工作台管理范围以外的文件。');return p;
  }
- function detach(paths){
+ function detach(paths,stamp=new Date().toISOString()){
   const targets=new Set(paths.filter(Boolean).map(key)),affectedJobs=new Set(),affectedUploads=new Set(),affectedAssets=new Set();let filesDeleted=0;
-  // Imported driver originals own their prepared segments; external linked sources are never erased.
-  const videoIds=new Set((state.driverVideos||[]).filter(v=>v.imported&&targets.has(key(v.sourcePath))).map(v=>v.id));
-  const clips=(state.driverClips||[]).filter(c=>videoIds.has(c.videoId)||targets.has(key(resolve(output,c.file))));
-  for(const c of clips){targets.add(key(resolve(output,c.file)));const u=state.uploads[c.firstFrameUploadId];if(u)targets.add(key(uploadPath(config,u)));}
   const allowed=[...targets].map(safe); // Validate the complete set before any mutation.
   for(const path of allowed)if(existsSync(path)){unlinkSync(path);filesDeleted++;}
-  const stamp=new Date().toISOString();
   for(const j of state.jobs||[])if((j.outputs||[]).some(f=>targets.has(key(localMedia(config,f))))){j.deletedAt??=stamp;j.deletedReason='permanent-media-deletion';j.outputs=[];affectedJobs.add(j.id);}
   for(const [id,u] of Object.entries(state.uploads||{}))if(targets.has(key(uploadPath(config,u)))){affectedUploads.add(id);delete state.uploads[id];}
   for(const a of state.assets||[])if(affectedUploads.has(a.uploadId))affectedAssets.add(a.id);
   state.assets=(state.assets||[]).filter(a=>!affectedAssets.has(a.id));
-  const clipIds=new Set(clips.map(c=>c.id));
-  state.driverClips=(state.driverClips||[]).filter(c=>!clipIds.has(c.id));state.driverVideos=(state.driverVideos||[]).filter(v=>!videoIds.has(v.id));
   for(const p of state.projects||[]){
    if(p.production){p.production.referenceIds=(p.production.referenceIds||[]).filter(id=>!affectedAssets.has(id));for(const id of affectedAssets)delete p.production.referenceNotes?.[id];}
    for(const r of p.characters||[])r.referenceIds=(r.referenceIds||[]).filter(id=>!affectedAssets.has(id));
@@ -32,7 +25,6 @@ export function createMediaLifecycle({state,config,dataRoot,storage}){
     s.referenceIds=(s.referenceIds||[]).filter(id=>!affectedAssets.has(id));
     for(const name of ['imageHistory','videoHistory'])s[name]=(s[name]||[]).filter(id=>!affectedJobs.has(id));
     for(const name of ['imageJobId','confirmedFrameJobId','videoJobId'])if(affectedJobs.has(s[name]))s[name]=null;
-    if(clipIds.has(s.driver?.id))delete s.driver;
    }
   }
   for(const j of state.jobs||[])j.images=(j.images||[]).filter(id=>!affectedUploads.has(id));
@@ -44,17 +36,17 @@ export function createMediaLifecycle({state,config,dataRoot,storage}){
  }
  function removeJobs(ids){
   const jobs=ids.map(id=>state.jobs.find(j=>j.id===id)).filter(Boolean),paths=jobs.flatMap(j=>(j.outputs||[]).filter(f=>['output','temp'].includes(f.type)).map(f=>localMedia(config,f)));
-  const result=detach(paths);for(const j of jobs){j.deletedAt??=new Date().toISOString();j.deletedReason='permanent-media-deletion';j.outputs=[];}
+  const stamp=new Date().toISOString(),result=detach(paths,stamp);for(const j of jobs){j.deletedAt??=stamp;j.deletedReason='permanent-media-deletion';j.outputs=[];}
   const selected=new Set(ids);for(const p of state.projects||[])for(const s of p.shots){for(const name of ['imageHistory','videoHistory'])s[name]=(s[name]||[]).filter(id=>!selected.has(id));for(const name of ['imageJobId','confirmedFrameJobId','videoJobId'])if(selected.has(s[name]))s[name]=null;}
   return result;
  }
  function removeProject(id){
   const p=state.projects.find(p=>p.id===id);if(!p)return;
   const folder=storage.projectFolder(p);if(!folder.startsWith(root+sep)||existsSync(folder)&&!realpathSync(folder).startsWith(realpathSync(root)+sep))throw fault('项目目录无效，拒绝删除。');
-  const jobs=state.jobs.filter(j=>j.projectId===id),extras=[...(state.driverVideos||[]).filter(v=>v.projectId===id&&v.imported).map(v=>v.sourcePath),...(state.driverClips||[]).filter(c=>c.projectId===id).flatMap(c=>[resolve(output,c.file),uploadPath(config,state.uploads[c.firstFrameUploadId])]),...(state.exports||[]).filter(e=>e.projectId===id).map(e=>e.storagePath||resolve(dataRoot,'exports',e.id+'.mp4'))];
+  const jobs=state.jobs.filter(j=>j.projectId===id),extras=[...(state.exports||[]).filter(e=>e.projectId===id).map(e=>e.storagePath||resolve(dataRoot,'exports',e.id+'.mp4'))];
   // Validate extras before deleting any project output.
   extras.filter(Boolean).forEach(safe);removeJobs(jobs.map(j=>j.id));detach(extras);
-  state.projects=state.projects.filter(p=>p.id!==id);state.batchQueue=(state.batchQueue||[]).filter(q=>q.projectId!==id);state.driverVideos=(state.driverVideos||[]).filter(v=>v.projectId!==id);state.driverClips=(state.driverClips||[]).filter(c=>c.projectId!==id);
+  state.projects=state.projects.filter(p=>p.id!==id);state.batchQueue=(state.batchQueue||[]).filter(q=>q.projectId!==id);
   if(existsSync(folder))rmSync(folder,{recursive:true,force:true});
  }
  function reconcile(){
@@ -63,8 +55,6 @@ export function createMediaLifecycle({state,config,dataRoot,storage}){
   const missing=[];
   for(const j of state.jobs||[])if(j.status==='success'&&!j.deletedAt)for(const f of j.outputs||[]){const path=localMedia(config,f);if(f.type==='output'&&path&&!existsSync(path))missing.push(path);}
   for(const u of Object.values(state.uploads||{}))if(u.file?.type==='output'){const path=uploadPath(config,u);if(path&&!existsSync(path))missing.push(path);}
-  for(const v of state.driverVideos||[])if(v.imported&&!existsSync(v.sourcePath))missing.push(v.sourcePath);
-  for(const c of state.driverClips||[])if(!existsSync(resolve(output,c.file)))missing.push(resolve(output,c.file));
   for(const e of state.exports||[])if(e.status==='success'&&e.storagePath&&!existsSync(e.storagePath))missing.push(e.storagePath);
   if(missing.length){detach(missing);changed=true;}return changed;
  }

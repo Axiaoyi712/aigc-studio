@@ -34,9 +34,7 @@ export function createProjectFiles({state,save,config,appRoot,dataRoot,readBody,
     const jobs=structuredClone(state.jobs.filter(j=>j.projectId===project.id));
     const assetIds=new Set([...(project.production?.referenceIds||[]),...(project.characters||[]).flatMap(c=>c.referenceIds),...project.shots.flatMap(s=>s.referenceIds)]);
     const assets=structuredClone(state.assets.filter(a=>assetIds.has(a.id)));
-    const driverClips=structuredClone((state.driverClips||[]).filter(c=>project.shots.some(s=>s.driver?.id===c.id)));
-    const driverVideos=structuredClone((state.driverVideos||[]).filter(v=>driverClips.some(c=>c.videoId===v.id)));
-    const uploadIds=new Set([...assets.map(a=>a.uploadId),...jobs.flatMap(j=>j.images||[]),...driverClips.map(c=>c.firstFrameUploadId)]);
+    const uploadIds=new Set([...assets.map(a=>a.uploadId),...jobs.flatMap(j=>j.images||[])]);
     const uploads=Object.fromEntries([...uploadIds].map(id=>[id,state.uploads[id]]));
     const audioAssets=structuredClone(state.audioAssets.filter(a=>a.id===project.production?.backgroundAudioId));
     const exports=structuredClone(state.exports.filter(e=>e.projectId===project.id));
@@ -46,9 +44,7 @@ export function createProjectFiles({state,save,config,appRoot,dataRoot,readBody,
     for(const j of jobs){j.outputs=j.outputs.filter(o=>o.type==='output'&&existsSync(localMedia(config,o)||'')).map((o,index)=>({...o,index}));if(j.status==='success'&&!j.outputs.length)throw fault('成功任务的正式成品缺失，不能生成不完整的归档。');for(const o of j.outputs)add('job',j.id,localMedia(config,o),{index:o.index});}
     for(const a of audioAssets)add('audio',a.id,a.storagePath||resolve(dataRoot,'audio',a.filename));
     for(const e of exports)if(e.status==='success')add('export',e.id,e.storagePath||resolve(dataRoot,'exports',e.id+'.mp4'));
-    for(const v of driverVideos)add('driver-source',v.id,v.sourcePath);
-    for(const c of driverClips)add('driver-clip',c.id,resolve(config.comfyRoot,'output',c.file));
-    return {schemaVersion:1,createdAt:new Date().toISOString(),project:structuredClone(project),jobs,assets,uploads,audioAssets,exports,driverVideos,driverClips,files};
+    return {schemaVersion:1,createdAt:new Date().toISOString(),project:structuredClone(project),jobs,assets,uploads,audioAssets,exports,files};
   }
   async function restore(zip) {
     const importId=randomUUID(),destination=resolve(folder,importId);
@@ -56,8 +52,9 @@ export function createProjectFiles({state,save,config,appRoot,dataRoot,readBody,
     await pythonJSON(config,appRoot,'archive-project.py',['unpack',zip,destination]);
     const data=JSON.parse(readFileSync(resolve(destination,'project.json'),'utf8'));
     if(!Array.isArray(data.jobs)||data.jobs.length>5000||!Array.isArray(data.assets)||!Array.isArray(data.project?.shots)||data.project.shots.length>50||!data.project.name)throw fault('项目归档结构无效。');
+    if(!Array.isArray(data.files)||data.files.some(file=>!['upload','job','audio','export'].includes(file.kind)))throw fault('归档使用了当前版本不支持的素材类型。');
     const ids=new Map();const addId=id=>{if(typeof id!=='string'||!/^[a-f0-9-]{36}$/.test(id))throw fault('归档编号无效。');if(!ids.has(id))ids.set(id,randomUUID());};
-    for(const item of [data.project,...data.project.shots,...(data.project.characters||[]),...data.jobs,...data.assets,...(data.audioAssets||[]),...(data.exports||[]),...(data.driverVideos||[]),...(data.driverClips||[])])addId(item.id);
+    for(const item of [data.project,...data.project.shots,...(data.project.characters||[]),...data.jobs,...data.assets,...(data.audioAssets||[]),...(data.exports||[])])addId(item.id);
     for(const id of Object.keys(data.uploads||{}))addId(id);
     const map=id=>ids.get(id)||id;
     const idArrays=new Set(['characterIds','referenceIds','jobIds','imageHistory','videoHistory','images']);
@@ -67,7 +64,6 @@ export function createProjectFiles({state,save,config,appRoot,dataRoot,readBody,
       return (key==='id'||key.endsWith('Id'))&&typeof value==='string'?map(value):value;
     };
     const project=relink(data.project),jobs=relink(data.jobs),assets=relink(data.assets),audioAssets=relink(data.audioAssets||[]),exports=relink(data.exports||[]);
-    const driverVideos=relink(data.driverVideos||[]),driverClips=relink(data.driverClips||[]);
     for(const a of audioAssets)delete a.storagePath;for(const e of exports)delete e.storagePath;for(const a of assets)delete a.projectFiles;delete project.storageFolder;for(const s of project.shots)delete s.storageFolder;
     
     const uploads=Object.fromEntries(Object.entries(data.uploads||{}).map(([id,u])=>[map(id),structuredClone(u)]));
@@ -83,16 +79,10 @@ export function createProjectFiles({state,save,config,appRoot,dataRoot,readBody,
         const output=jobs.find(j=>j.id===id)?.outputs?.[file.index];if(!output)throw fault('归档成品引用无效。');
         Object.assign(output,{type:'output',subfolder:`aigc-studio/restored/${importId}`,filename:`${id}-${file.index}${extension}`});target=localMedia(config,output);
       }else if(file.kind==='audio'){const a=audioAssets.find(a=>a.id===id);if(!a)throw fault('声音引用无效。');a.filename=id+extension;target=resolve(dataRoot,'audio',a.filename);}
-      else if(file.kind==='driver-source'){
-        const v=driverVideos.find(v=>v.id===id);if(!v)throw fault('驱动原片引用无效。');project.storageFolder??=project.name.replace(/[<>:"/\\|?*\x00-\x1f]/g,'_').replace(/[ .]+$/g,'').slice(0,28)+'_'+project.id.slice(0,8);target=resolve(config.comfyRoot,'output/AIGC项目',project.storageFolder,'驱动素材',id+extension);v.sourcePath=target;v.imported=true;
-      }else if(file.kind==='driver-clip'){
-        const c=driverClips.find(c=>c.id===id);if(!c||!project.storageFolder)throw fault('驱动片段引用无效。');c.file=`AIGC项目/${project.storageFolder}/驱动素材/${id}/depth${extension}`;target=resolve(config.comfyRoot,'output',c.file);
-      }else if(file.kind==='export'&&exports.some(e=>e.id===id))target=resolve(dataRoot,'exports',id+'.mp4');
+      else if(file.kind==='export'&&exports.some(e=>e.id===id))target=resolve(dataRoot,'exports',id+'.mp4');
       else throw fault('归档文件映射无效。');
       mkdirSync(resolve(target,'..'),{recursive:true});copyFileSync(source,target);
     }
-    for(const v of driverVideos){const s=statSync(v.sourcePath);v.bytes=s.size;v.mtime=s.mtimeMs;}
-    for(const s of project.shots)if(s.driver){const c=driverClips.find(c=>c.id===s.driver.id);if(!c)throw fault('镜头驱动引用无效。');s.driver=c;}
     for(const [index,oldShot] of data.project.shots.entries()){
       const shot=project.shots[index];const before=shotPlan(data.project,oldShot,data.assets),after=shotPlan(project,shot,assets);
       for(const old of data.jobs.filter(j=>j.shotId===oldShot.id)){
@@ -104,7 +94,7 @@ export function createProjectFiles({state,save,config,appRoot,dataRoot,readBody,
     }
     for(const job of jobs)if(['queued','running','recovering','submitting'].includes(job.status)){job.status='failed';job.error='归档时任务尚未完成，请重新生成。';}
     project.name=String(project.name).slice(0,70)+'（恢复副本）';project.restoredAt=new Date().toISOString();
-    state.projects.push(project);state.jobs.push(...jobs);state.assets.push(...assets);Object.assign(state.uploads,uploads);state.audioAssets.push(...audioAssets);state.exports.push(...exports);state.driverVideos??=[];state.driverClips??=[];state.driverVideos.push(...driverVideos);state.driverClips.push(...driverClips);save();
+    state.projects.push(project);state.jobs.push(...jobs);state.assets.push(...assets);Object.assign(state.uploads,uploads);state.audioAssets.push(...audioAssets);state.exports.push(...exports);save();
     return project;
     }finally{rmSync(destination,{recursive:true,force:true});}
   }
