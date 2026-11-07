@@ -66,7 +66,7 @@ async function load(full) {
     const assetsChanged=JSON.stringify(assets)!==JSON.stringify(loaded.assets)||JSON.stringify(snapshot?.project?.catalog)!==JSON.stringify(loaded.project.catalog);
     snapshot = loaded;
     assets=loaded.assets||[];
-    if(assetsChanged&&!full){catalogRenderPending=true;const valid=new Set(assets.map(a=>a.id));draft.catalog=structuredClone(loaded.project.catalog);draft.characters=structuredClone(loaded.project.characters||[]);if(draft.production)draft.production.referenceIds=(draft.production.referenceIds||[]).filter(id=>valid.has(id));for(const shot of draft.shots)shot.referenceIds=(shot.referenceIds||[]).filter(id=>valid.has(id));}
+    if(assetsChanged&&!full){catalogRenderPending=true;const valid=new Set(assets.map(a=>a.id));draft.catalog=structuredClone(loaded.project.catalog);draft.characters=structuredClone(loaded.project.characters||[]);const roles=new Set(draft.characters.map(r=>r.id));if(draft.production)draft.production.referenceIds=(draft.production.referenceIds||[]).filter(id=>valid.has(id));for(const shot of draft.shots){shot.referenceIds=(shot.referenceIds||[]).filter(id=>valid.has(id));if(!dirty&&!saving){const current=loaded.project.shots.find(s=>s.id===shot.id);if(current)shot.characterIds=structuredClone(current.characterIds);}else if(shot.characterIds)shot.characterIds=shot.characterIds.filter(id=>roles.has(id));}}
     if (full) { draft = structuredClone(snapshot.project); dirty=false; frameChoices.clear(); }
     localStorage.setItem('aigc-project', currentId);
   } else { snapshot = null; draft = null; assets=[]; }
