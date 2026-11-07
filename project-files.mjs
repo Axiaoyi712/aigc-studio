@@ -54,16 +54,18 @@ export function createProjectFiles({state,save,config,appRoot,dataRoot,readBody,
     if(!Array.isArray(data.jobs)||data.jobs.length>5000||!Array.isArray(data.assets)||!Array.isArray(data.project?.shots)||data.project.shots.length>50||!data.project.name)throw fault('项目归档结构无效。');
     if(!Array.isArray(data.files)||data.files.some(file=>!['upload','job','audio','export'].includes(file.kind)))throw fault('归档使用了当前版本不支持的素材类型。');
     const ids=new Map();const addId=id=>{if(typeof id!=='string'||!/^[a-f0-9-]{36}$/.test(id))throw fault('归档编号无效。');if(!ids.has(id))ids.set(id,randomUUID());};
-    for(const item of [data.project,...data.project.shots,...(data.project.characters||[]),...data.jobs,...data.assets,...(data.audioAssets||[]),...(data.exports||[])])addId(item.id);
+    for(const item of [data.project,...data.project.shots,...(data.project.characters||[]),...(data.project.catalog||[]),...data.jobs,...data.assets,...(data.audioAssets||[]),...(data.exports||[])])addId(item.id);
     for(const id of Object.keys(data.uploads||{}))addId(id);
     const map=id=>ids.get(id)||id;
-    const idArrays=new Set(['characterIds','referenceIds','jobIds','imageHistory','videoHistory','images']);
+    const idArrays=new Set(['characterIds','referenceIds','assetIds','defaultReferenceIds','jobIds','imageHistory','videoHistory','images']);
     const relink=(value,key='')=>{
       if(Array.isArray(value))return value.map(v=>idArrays.has(key)&&typeof v==='string'?map(v):relink(v));
       if(value&&typeof value==='object')return Object.fromEntries(Object.entries(value).map(([k,v])=>[key==='referenceNotes'?map(k):k,relink(v,k)]));
       return (key==='id'||key.endsWith('Id'))&&typeof value==='string'?map(value):value;
     };
     const project=relink(data.project),jobs=relink(data.jobs),assets=relink(data.assets),audioAssets=relink(data.audioAssets||[]),exports=relink(data.exports||[]);
+    if(!project.catalog){project.catalog=[];for(const a of assets){a.scope='project';a.ownerProjectId=project.id;a.groupId=a.id;a.groupName=a.name;project.catalog.push({id:a.id,name:a.name,category:a.category,assetIds:[a.id],defaultReferenceIds:[a.id]});}}
+    for(const a of assets){a.scope='project';a.ownerProjectId=project.id;delete a.placementKey;delete a.storageGroupFolder;}
     for(const a of audioAssets)delete a.storagePath;for(const e of exports)delete e.storagePath;for(const a of assets)delete a.projectFiles;delete project.storageFolder;for(const s of project.shots)delete s.storageFolder;
     
     const uploads=Object.fromEntries(Object.entries(data.uploads||{}).map(([id,u])=>[map(id),structuredClone(u)]));

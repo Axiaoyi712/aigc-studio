@@ -67,6 +67,15 @@ test('foreign origins, fake images, unregistered uploads and empty prompts are r
   assert.equal((await h.post('/api/jobs', { template: 'flux-edit', prompt: 'a cabin', images: ['missing'] })).status, 400);
   assert.equal(h.engine.submitted.length, 0);
 });
+test('new projects expose no foreign assets, reject direct reference injection and accept explicitly selected library assets',async t=>{
+ const h=await harness(t),upload=await h.upload(),a=await(await h.post('/api/assets',{name:'Private role',category:'character',uploadId:upload.id})).json(),p=await(await h.post('/api/projects',{name:'Empty project'})).json();
+ assert.deepEqual((await(await fetch(h.url+'/api/projects/'+p.id)).json()).assets,[]);
+ p.shots=[{id:randomUUID(),title:'Shot',imagePrompt:'portrait',videoPrompt:'blink',referenceIds:[a.id],seed:''}];
+ assert.equal((await h.post('/api/projects/'+p.id,p)).status,400);assert.deepEqual(h.app.state.projects[0].shots,[]);
+ assert.equal((await h.post('/api/catalog/'+p.id+'/import',{assetIds:[a.id]})).status,200);
+ assert.equal((await h.post('/api/projects/'+p.id,p)).status,200);
+ assert.equal((await(await fetch(h.url+'/api/projects/'+p.id)).json()).assets[0].id,a.id);
+});
 test('duplicate submission is idempotent and new tasks respect a busy engine', async t => {
   const h = await harness(t);
   const image = await h.upload();
@@ -115,6 +124,7 @@ async function threeShotProject(h) {
   const upload = await h.upload();
   const asset = await (await h.post('/api/assets', { name: 'Test character', category: 'character', uploadId: upload.id })).json();
   const project = await (await h.post('/api/projects', { name: 'Three shot test' })).json();
+  assert.equal((await h.post('/api/catalog/'+project.id+'/import',{assetIds:[asset.id]})).status,200);
   project.shots = [0, 1, 2].map(i => ({ id: randomUUID(), title: `Shot ${i}`, imagePrompt: `Image ${i}`, videoPrompt: `Motion ${i}`, referenceIds: [asset.id], seed: i }));
   const saved = await h.post('/api/projects/' + project.id, project);
   assert.equal(saved.status, 200, await saved.text());
@@ -182,7 +192,7 @@ test('general prompt length and both-stage reference checks reject atomically',a
   project.shots[0].generalPrompt='中'.repeat(6001);const before=h.app.state.projects[0].shots[0].generalPrompt;
   assert.equal((await h.post('/api/projects/'+project.id,project)).status,400);assert.equal(h.app.state.projects[0].shots[0].generalPrompt,before);
   project.shots[0].generalPrompt='湖水轻轻起伏';project.videoTemplate='h3-reference';project.video={frames:73,aspect:'landscape',profile:'draft'};
-  const asset=h.app.state.assets[0];for(let i=0;i<3;i++){const a=await(await h.post('/api/assets',{name:'scene'+i,category:'scene',uploadId:asset.uploadId})).json();project.shots[0].referenceIds.push(a.id);}
+  const asset=h.app.state.assets[0];for(let i=0;i<3;i++){const a=await(await h.post('/api/assets',{projectId:project.id,name:'scene'+i,category:'scene',uploadId:asset.uploadId})).json();project.shots[0].referenceIds.push(a.id);}
   assert.equal((await h.post('/api/projects/'+project.id,project)).status,200);
   const r=await h.post(`/api/projects/${project.id}/batch`,{requestId:randomUUID(),kind:'both',shotIds:[project.shots[0].id]});assert.equal(r.status,400);assert.match((await r.json()).error,/最多使用 3/);assert.equal(h.app.state.batchQueue.length,0);
 });
@@ -190,7 +200,7 @@ test('general prompt length and both-stage reference checks reject atomically',a
 test('project characters enter real reference inputs and stale character frames cannot be confirmed or animated', async t => {
   const h = await harness(t); const project = await threeShotProject(h);
   const first = h.app.state.assets[0]; const upload = await h.upload();
-  const second = await (await h.post('/api/assets',{name:'Role B',category:'character',uploadId:upload.id})).json();
+  const second = await (await h.post('/api/assets',{projectId:project.id,name:'Role B',category:'character',uploadId:upload.id})).json();
   project.characters = [{id:randomUUID(),name:'Swordsman',description:'Black ponytail and black gold coat.',referenceIds:[first.id]},{id:randomUUID(),name:'Mage',description:'White hair and red coat.',referenceIds:[second.id]}];
   for(const shot of project.shots){shot.referenceIds=[];shot.characterIds=project.characters.map(role=>role.id);}
   assert.equal((await h.post('/api/projects/'+project.id,project)).status,200);
@@ -220,7 +230,7 @@ test('project characters enter real reference inputs and stale character frames 
   assert.equal((await h.post(`/api/projects/${project.id}/select`,{shotId:shot.id,kind:'image',jobId:frameId})).status,400);
   const count=h.app.state.batchQueue.length;
   const more=[];
-  for(let i=0;i<19;i++)more.push(await(await h.post('/api/assets',{name:'Extra '+i,category:'character',uploadId:first.uploadId})).json());
+  for(let i=0;i<19;i++)more.push(await(await h.post('/api/assets',{projectId:project.id,name:'Extra '+i,category:'character',uploadId:first.uploadId})).json());
   project.characters[0].referenceIds=[first.id,...more.map(asset=>asset.id)];
   assert.equal((await h.post('/api/projects/'+project.id,project)).status,200);
   assert.equal((await batch('image')).status,400);assert.equal(h.app.state.batchQueue.length,count);
@@ -362,6 +372,7 @@ test('project planning persists production, per-shot duration and immutable inpu
 test('deleting a project permanently removes its generated media and keeps independent shared assets and other projects',async t=>{
   const h=await harness(t),project=await threeShotProject(h);
   const other=await(await h.post('/api/projects',{name:'Keep this project'})).json();
+  assert.equal((await h.post('/api/catalog/'+other.id+'/import',{assetIds:h.app.state.assets.map(a=>a.id)})).status,200);
   const jobId=randomUUID(),exportId=randomUUID(),archiveId=randomUUID();
   const media=resolve(h.temp,'missing/output/aigc-studio/keep.mp4');await mkdir(resolve(media,'..'),{recursive:true});await writeFile(media,'original video');
   h.app.state.jobs.push({id:jobId,projectId:project.id,status:'success',outputs:[{type:'output',kind:'video',filename:'keep.mp4',subfolder:'aigc-studio'}]});
@@ -451,7 +462,7 @@ test('bulk deletion rejects malformed, empty, duplicate and foreign-origin reque
 
 test('six, ten and twenty combined project references enqueue intact; twenty-one are rejected atomically',async t=>{
   const h=await harness(t),project=await threeShotProject(h),pool=[h.app.state.assets[0]];
-  for(let i=1;i<21;i++){const upload=await h.upload();pool.push(await(await h.post('/api/assets',{name:'Ref '+i,category:i<3?'character':'scene',uploadId:upload.id})).json());}
+  for(let i=1;i<21;i++){const upload=await h.upload();pool.push(await(await h.post('/api/assets',{projectId:project.id,name:'Ref '+i,category:i<3?'character':'scene',uploadId:upload.id})).json());}
   project.characters=[{id:randomUUID(),name:'Main role',description:'Keep identity',referenceIds:pool.slice(0,3).map(a=>a.id)}];
   for(const shot of project.shots){shot.referenceIds=[];shot.characterIds=[project.characters[0].id];}
   project.production={referenceIds:pool.slice(3,6).map(a=>a.id)};

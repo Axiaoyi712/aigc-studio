@@ -12,6 +12,7 @@ export function validateCharacters(value, assets) {
     if (!name || name.length > 80 || description.length > 1600) fail('请填写角色名，固定外观描述不超过 1600 字。');
     if (!Array.isArray(item.referenceIds) || !item.referenceIds.length || item.referenceIds.length > 20 || new Set(item.referenceIds).size !== item.referenceIds.length || item.referenceIds.some(id => !assets.some(asset => asset.id === id && asset.category === 'character'))) fail('每个角色请选择 1～20 张角色类参考图；每镜全部参考合计不超过 20 张。');
     const result={id:item.id,name,description,referenceIds:[...item.referenceIds]};
+    if(item.groupId)result.groupId=item.groupId;
     for(const key of ['identity','wardrobe'])if(item[key]!==undefined){result[key]=String(item[key]||'').trim();if(result[key].length>800)fail('身份或服装描述不超过 800 字。');}
     return result;
   });
@@ -21,7 +22,7 @@ export function characterContext(project, shot) {
   const ids = shot.characterIds ?? characters.map(item => item.id);
   const roles = characters.filter(item => ids.includes(item.id));
   const referenceIds = [...new Set([...roles.flatMap(item => item.referenceIds), ...shot.referenceIds])];
-  const signature = roles.length ? createHash('sha256').update(JSON.stringify(roles)).digest('hex') : null;
+  const signature = roles.length ? createHash('sha256').update(JSON.stringify(roles.map(({groupId,...role})=>role))).digest('hex') : null;
   const wardrobe=shot.director?.wardrobe;
   const backgroundPeople=/路人|人群|行人|群众|经过的人/.test([shot.director?.background,shot.videoPrompt].join(' '));
   const descriptions = roles.map(role => `角色「${role.name}」：${role.identity||role.description||'保持参考中的脸型、五官、发型和体型。'}${wardrobe||role.wardrobe?'；本镜头服装：'+(wardrobe||role.wardrobe):''}`).join('\n');

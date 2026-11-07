@@ -1,0 +1,55 @@
+import {existsSync,readdirSync,statSync,readFileSync} from 'node:fs';
+import {resolve,relative,sep,extname,basename,dirname} from 'node:path';
+import {randomUUID} from 'node:crypto';
+import {localMedia} from './media.mjs';
+import {uploadPath} from './uploads.mjs';
+import {pruneCatalog} from './asset-catalog.mjs';
+const types={'角色':'character','场景':'scene','道具':'prop','风格':'style'};
+const image=/\.(png|jpe?g|webp)$/i,media=/\.(png|jpe?g|webp|mp4|webm|mov|mkv|wav|mp3|m4a|ogg|flac)$/i;
+export function createFolderSync({state,storage,config,lifecycle,save,send}){
+ const output=resolve(config.comfyRoot,'output'),root=storage.root;let observed=new Map(),missing=new Map(),missingProjects=new Map();
+ function walk(folder){const files=[];if(!existsSync(folder))return files;for(const item of readdirSync(folder,{withFileTypes:true})){if(item.isSymbolicLink()||item.name.startsWith('.'))continue;const path=resolve(folder,item.name);if(item.isDirectory())files.push(...walk(path));else if(media.test(item.name)){const s=statSync(path);files.push({path,size:s.size,mtimeMs:s.mtimeMs});}}return files;}
+ function file(path){return {type:'output',subfolder:relative(output,dirname(path)).split(sep).join('/'),filename:basename(path)};}
+ function locate(path){
+  const parts=relative(root,path).split(sep);const p=state.projects.find(p=>p.storageFolder===parts[0]);const scope=p?'project':parts[0]==='公共素材库'?'shared':parts[0]==='待分类素材'?'unassigned':null;const category=types[parts[1]];if(!scope||!category)return null;
+  return {p,scope,category,folder:parts.length>3?parts[2]:basename(path,extname(path)),name:(parts.length>3?parts[2]:basename(path,extname(path))).replace(/_[a-f0-9]{8}$/i,'')};
+ }
+ function replace(old,path){const f=file(path);for(const u of Object.values(state.uploads||{}))if(uploadPath(config,u)===old)u.file={...f};for(const j of state.jobs||[])for(const o of j.outputs||[])if(localMedia(config,o)===old)Object.assign(o,f);for(const e of state.exports||[])if(e.storagePath===old)e.storagePath=path;for(const a of state.audioAssets||[])if(a.storagePath===old)a.storagePath=path;}
+ function cleanMembership(a,p){for(const other of state.projects){if(other.id===p?.id)continue;const owned=other.catalog?.some(g=>g.assetIds.includes(a.id));if(!owned)continue;for(const g of other.catalog){g.assetIds=g.assetIds.filter(id=>id!==a.id);g.defaultReferenceIds=g.defaultReferenceIds.filter(id=>id!==a.id);}for(const r of other.characters||[])r.referenceIds=r.referenceIds.filter(id=>id!==a.id);if(other.production)other.production.referenceIds=(other.production.referenceIds||[]).filter(id=>id!==a.id);for(const s of other.shots)s.referenceIds=(s.referenceIds||[]).filter(id=>id!==a.id);}}
+ function classify(a,path){const loc=locate(path);if(!loc)return;
+  const oldOwner=a.ownerProjectId,wasShared=a.scope==='shared',oldCategory=a.category;
+  if(oldCategory!==loc.category)for(const p of state.projects){for(const g of p.catalog||[]){g.assetIds=g.assetIds.filter(id=>id!==a.id);g.defaultReferenceIds=g.defaultReferenceIds.filter(id=>id!==a.id);}for(const r of p.characters||[])r.referenceIds=r.referenceIds.filter(id=>id!==a.id);}
+  a.category=loc.category;
+  if(loc.scope==='project'&&(oldOwner!==loc.p.id||wasShared)){cleanMembership(a,loc.p);a.ownerProjectId=loc.p.id;a.scope='project';}
+  else if(loc.scope!=='project'){if(loc.scope==='unassigned')cleanMembership(a,null);a.ownerProjectId=null;a.scope=loc.scope;}
+  const p=loc.p;if(p){p.catalog??=[];let g=p.catalog.find(g=>g.assetIds.includes(a.id));const destination=p.catalog.find(g=>g.category===loc.category&&g.folderPath===loc.folder);
+   if(g?.folderPath&&g.folderPath!==loc.folder&&(destination&&destination!==g||g.assetIds.some(id=>{const other=state.assets.find(a=>a.id===id),old=uploadPath(config,state.uploads[other?.uploadId]);return old&&old!==path&&existsSync(old)&&dirname(old)!==dirname(path);} ))){g.assetIds=g.assetIds.filter(id=>id!==a.id);g.defaultReferenceIds=g.defaultReferenceIds.filter(id=>id!==a.id);for(const r of p.characters||[])if(r.groupId===g.id)r.referenceIds=r.referenceIds.filter(id=>id!==a.id);g=null;}
+   if(!g){g=destination;if(!g){g={id:randomUUID(),name:loc.name,category:loc.category,folderPath:loc.folder,assetIds:[],defaultReferenceIds:[]};p.catalog.push(g);}if(!g.assetIds.includes(a.id))g.assetIds.push(a.id);if(!g.defaultReferenceIds.length)g.defaultReferenceIds=[a.id];a.groupId=g.id;a.groupName=g.name;}else if(g.folderPath&&g.folderPath!==loc.folder){g.name=loc.name;a.groupName=loc.name;const r=(p.characters||[]).find(r=>r.groupId===g.id);if(r)r.name=g.name;}g.folderPath=loc.folder;
+   if(g.category==='character'&&!(p.characters||[]).some(r=>r.groupId===g.id)){p.characters??=[];p.characters.push({id:randomUUID(),groupId:g.id,name:g.name,description:'',referenceIds:[...g.defaultReferenceIds]});}
+  }a.storageGroupFolder=loc.folder;a.placementKey=[a.ownerProjectId||a.scope,a.category,a.groupId].join('/');
+ }
+ function scan(now=Date.now()){
+  if(!config.projectStorage||!existsSync(root))return false;let changed=false;
+  // Recover a renamed project folder from its stable project identifier before deletion reconciliation.
+  for(const p of [...state.projects]){if(existsSync(storage.projectFolder(p))){missingProjects.delete(p.id);continue;}for(const entry of readdirSync(root,{withFileTypes:true})){if(!entry.isDirectory()||entry.isSymbolicLink())continue;const note=resolve(root,entry.name,'项目资料/项目记录.json');try{if(JSON.parse(readFileSync(note,'utf8')).project.id===p.id){p.storageFolder=entry.name;changed=true;break;}}catch{}}if(!existsSync(storage.projectFolder(p))){if(!missingProjects.has(p.id))missingProjects.set(p.id,now);else if(now-missingProjects.get(p.id)>=3000){lifecycle.removeProject(p.id);missingProjects.delete(p.id);changed=true;}}}
+  const files=walk(root),ready=files.filter(f=>observed.get(f.path)===f.size+':'+f.mtimeMs&&now-f.mtimeMs>1200);observed=new Map(files.map(f=>[f.path,f.size+':'+f.mtimeMs]));
+  const known=new Map();for(const u of Object.values(state.uploads||{})){const path=uploadPath(config,u);if(path)known.set(path,u.sha256);}for(const j of state.jobs||[])if(!j.deletedAt)for(const f of j.outputs||[]){const path=localMedia(config,f);if(path)known.set(path,f.sha256);}for(const [hash,name] of Object.entries(state.mediaIndex||{}))if(!known.get(resolve(output,name)))known.set(resolve(output,name),hash);
+  const digest=f=>storage.digest(f.path);
+  for(const [old,hash] of known){if(existsSync(old)){missing.delete(old);continue;}const moved=hash&&ready.find(f=>!known.has(f.path)&&digest(f)===hash);if(moved){replace(old,moved.path);state.mediaIndex[hash]=relative(output,moved.path).split(sep).join('/');for(const a of state.assets)if(uploadPath(config,state.uploads[a.uploadId])===moved.path){classify(a,moved.path);a.view=basename(moved.path,extname(moved.path));}known.set(moved.path,hash);missing.delete(old);changed=true;}else if(!missing.has(old))missing.set(old,now);}
+  for(const f of ready){
+   if(known.has(f.path)){
+    const original=known.get(f.path),hash=digest(f);for(const a of state.assets){const u=state.uploads[a.uploadId];if(uploadPath(config,u)!==f.path)continue;classify(a,f.path);if(original&&hash!==original){a.contentVersion=hash;a.updatedAt=new Date(now).toISOString();u.sha256=hash;delete state.mediaIndex[original];changed=true;}}
+    if(original&&original!==hash){for(const j of state.jobs||[])for(const o of j.outputs||[])if(localMedia(config,o)===f.path){o.sha256=hash;o.contentVersion=hash;j.fileChangedAt=new Date(now).toISOString();for(const p of state.projects)for(const s of p.shots)if(s.confirmedFrameJobId===j.id)s.confirmedFrameJobId=null;changed=true;}}state.mediaIndex[hash]=relative(output,f.path).split(sep).join('/');continue;
+   }
+   const loc=locate(f.path);if(!loc||!image.test(f.path)||f.size>20*1024*1024||!f.size)continue;
+   const bytes=readFileSync(f.path).subarray(0,12),extension=extname(f.path).toLowerCase();const valid=extension==='.png'?bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])):extension==='.webp'?bytes.toString('ascii',0,4)==='RIFF'&&bytes.toString('ascii',8,12)==='WEBP':bytes[0]===255&&bytes[1]===216&&bytes[2]===255;if(!valid)continue;
+   const hash=digest(f),existing=state.assets.find(a=>state.uploads[a.uploadId]?.sha256===hash);
+   if(existing){if(loc.p&&!loc.p.catalog?.some(g=>g.assetIds.includes(existing.id))){existing.scope='shared';existing.ownerProjectId=null;loc.p.catalog??=[];let g=loc.p.catalog.find(g=>g.id===existing.groupId);if(!g){g={id:existing.groupId,name:existing.groupName||existing.name,category:existing.category,assetIds:[],defaultReferenceIds:[]};loc.p.catalog.push(g);}g.assetIds.push(existing.id);if(!g.defaultReferenceIds.length)g.defaultReferenceIds=[existing.id];if(g.category==='character'&&!loc.p.characters.some(r=>r.groupId===g.id))loc.p.characters.push({id:randomUUID(),groupId:g.id,name:g.name,description:'',referenceIds:[...g.defaultReferenceIds]});}storage.storeFile(f.path,uploadPath(config,state.uploads[existing.uploadId]));changed=true;continue;}
+   const id=randomUUID(),uploadId=randomUUID();state.uploads[uploadId]={file:file(f.path),sha256:hash,type:extension==='.png'?'image/png':extension==='.webp'?'image/webp':'image/jpeg'};const a={id,uploadId,name:loc.name,groupName:loc.name,groupId:id,category:loc.category,scope:loc.scope,ownerProjectId:loc.p?.id||null,view:basename(f.path,extname(f.path)),source:'filesystem'};state.assets.push(a);classify(a,f.path);state.mediaIndex[hash]=relative(output,f.path).split(sep).join('/');changed=true;
+  }
+  const expired=[...missing].filter(([path,when])=>now-when>=3000&&!existsSync(path)).map(([path])=>path);if(expired.length){lifecycle.detach(expired);for(const path of expired)missing.delete(path);changed=true;}
+  pruneCatalog(state);state.folderSync={checkedAt:new Date(now).toISOString(),pending:missing.size+missingProjects.size};return missingProjects.size?false:changed;
+ }
+ async function handle(req,res,url){const m=url.pathname.match(/^\/api\/projects\/([a-f0-9-]+)\/files$/);if(!m||req.method!=='GET')return false;const p=state.projects.find(p=>p.id===m[1]);if(!p)throw Object.assign(Error('项目不存在。'),{status:404});const base=storage.projectFolder(p);send(res,200,{checkedAt:state.folderSync?.checkedAt,files:walk(base).map(f=>({name:basename(f.path),relative:relative(base,f.path).split(sep).join('/'),size:f.size,modifiedAt:f.mtimeMs,url:'/api/project-file/'+p.id+'?path='+encodeURIComponent(relative(base,f.path).split(sep).join('/'))}))});return true;}
+ return {scan,handle,walk};
+}

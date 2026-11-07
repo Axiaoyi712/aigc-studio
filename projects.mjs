@@ -8,12 +8,13 @@ import { primaryOutput, requireMedia } from './media.mjs';
 import {uploadFile} from './uploads.mjs';
 import { normalizeDirector, normalizeProduction } from './public/director-options.js';
 import { shotPlan, frameMatches, videoMatches, validateEdit } from './production.mjs';
+import {projectAssets} from './asset-catalog.mjs';
 
 const active = new Set(['submitting', 'queued', 'running', 'recovering']);
 const pending = item => ['waiting', 'dispatched'].includes(item.status);
 function fail(message, status = 400) { throw Object.assign(new Error(message), { status }); }
 function text(value, limit = 6000) { return String(value ?? '').trim().slice(0, limit); }
-export function createProjects({ state, save, submitJob, refresh, json, upstream, publicJob, config, appRoot, dataRoot, send, readBody, isEnhancing=()=>false,removeProject }) {
+export function createProjects({ state, save, submitJob, refresh, json, upstream, publicJob, config, appRoot, dataRoot, send, readBody, isEnhancing=()=>false,removeProject,catalog }) {
   state.projects ??= [];
   state.assets ??= [];
   state.batchQueue ??= [];
@@ -113,6 +114,7 @@ export function createProjects({ state, save, submitJob, refresh, json, upstream
       let frameJobId;
       const character = characterContext(project, shot);
       const plan = shotPlan(project,kind==='video'&&newFrameId?{...shot,confirmedFrameJobId:newFrameId}:shot,state.assets);
+      if(plan.referenceIds.some(id=>!projectAssets(state,project).some(a=>a.id===id)))fail('镜头引用了未加入本项目的素材，请先从素材库选用。');
       if (plan.errors.length) fail(`镜头「${shot.title}」：${plan.errors.join('；')}`);
       if (kind === 'image') {
         const assets = plan.referenceIds.map(id => state.assets.find(asset => asset.id === id) ?? fail('参考素材已不存在。'));
@@ -233,11 +235,8 @@ export function createProjects({ state, save, submitJob, refresh, json, upstream
     if (parts[1] === 'assets') {
       if (req.method === 'GET') result = state.assets;
       else if (req.method === 'POST') {
-        if (!state.uploads[body.uploadId]) fail('素材图片不存在。');
-        if (!['character', 'scene', 'prop', 'style'].includes(body.category)) fail('请选择素材分类。');
-        if (!text(body.name, 80)) fail('请填写素材名称。');
-        result = { id: randomUUID(), name: text(body.name, 80), category: body.category, uploadId: body.uploadId };
-        state.assets.push(result); status = 201; save();
+        if(state.jobs.some(j=>active.has(j.status))||state.batchQueue.some(pending)||exporting||isEnhancing())fail('请等待生成或导出完成，再保存素材。',409);
+        result=catalog.addAsset(body);status=201;
       } else fail('接口不存在。', 404);
     } else if (parts[1] === 'batch-queue') {
       if (req.method === 'GET') result = { paused: state.queuePaused, items: state.batchQueue };
@@ -270,13 +269,13 @@ export function createProjects({ state, save, submitJob, refresh, json, upstream
         if (req.method === 'GET') result = state.projects;
         else if (req.method === 'POST') {
           if (!text(body.name, 80)) fail('请填写项目名称。');
-          result = { id: randomUUID(), name: text(body.name, 80), script: '', videoTemplate: 'h3-fast', shots: [], createdAt: new Date().toISOString() };
+          result = { id: randomUUID(), name: text(body.name, 80), script: '', videoTemplate: 'h3-fast', shots: [], catalog:[], characters:[], createdAt: new Date().toISOString() };
           if(body.production){try{result.production=normalizeProduction(body.production,state.assets);result.video=normalizeVideoOptions({aspect:'landscape'});}catch(error){fail(error.message);}}
           state.projects.push(result); save(); status = 201;
         } else fail('接口不存在。', 404);
       } else {
         const project = projectById(parts[2]);
-        if (parts.length === 3 && req.method === 'GET') result = { project, assets:state.assets, ref2vaEnabled:Boolean(config.enableRef2VA), plans: project.shots.map(shot=>shotPlan(project,shot,state.assets)), archives:(state.archives||[]).filter(a=>a.projectId===project.id), characterSignatures: Object.fromEntries(project.shots.map(shot => [shot.id, characterContext(project, shot).signature])), jobs: state.jobs.filter(job => job.projectId === project.id).map(publicJob), queue: state.batchQueue.filter(item => item.projectId === project.id), paused: state.queuePaused, exports: state.exports.filter(item => item.projectId === project.id) };
+        if (parts.length === 3 && req.method === 'GET') result = { project, assets:projectAssets(state,project), ref2vaEnabled:Boolean(config.enableRef2VA), plans: project.shots.map(shot=>shotPlan(project,shot,state.assets)), archives:(state.archives||[]).filter(a=>a.projectId===project.id), characterSignatures: Object.fromEntries(project.shots.map(shot => [shot.id, characterContext(project, shot).signature])), jobs: state.jobs.filter(job => job.projectId === project.id).map(publicJob), queue: state.batchQueue.filter(item => item.projectId === project.id), paused: state.queuePaused, exports: state.exports.filter(item => item.projectId === project.id) };
         else if (parts.length === 3 && req.method === 'DELETE') {
           if (projectBusy(project.id) || tailProjects.size || isEnhancing() || state.batchQueue.some(pending) || state.jobs.some(job => active.has(job.status)) || state.exports.some(item => item.status === 'running')) fail('正在生成、排队、提取尾帧或导出，请等待完成或取消待处理项后再删除项目。', 409);
           if(!removeProject)fail('永久删除功能尚未初始化。');removeProject(project.id);
@@ -288,9 +287,10 @@ export function createProjects({ state, save, submitJob, refresh, json, upstream
           if (!['h3-fast', 'h3-base',...(config.enableRef2VA?['h3-reference']:[])].includes(body.videoTemplate)) fail('视频模板无效。');
           let video;
           try { video = normalizeVideoOptions(body.video); } catch (error) { fail(error.message); }
-          const characters = validateCharacters(body.characters ?? project.characters ?? [], state.assets);
+          const allowedAssets=projectAssets(state,project);
+          const characters = validateCharacters(body.characters ?? project.characters ?? [], allowedAssets);
           let production;
-          if(body.production??project.production){try{production=normalizeProduction(body.production??project.production,state.assets);}catch(error){fail(error.message);}}
+          if(body.production??project.production){try{production=normalizeProduction(body.production??project.production,allowedAssets);}catch(error){fail(error.message);}}
           if (!Array.isArray(body.shots) || body.shots.length > 50) fail('镜头数量最多为 50。');
           const ids = new Set();
           const next = body.shots.map((entry, i) => {
@@ -298,7 +298,7 @@ export function createProjects({ state, save, submitJob, refresh, json, upstream
             const old = project.shots.find(shot => shot.id === entry.id);
             const seed = entry.seed === '' || entry.seed == null ? '' : Number(entry.seed);
             if (seed !== '' && (!Number.isSafeInteger(seed) || seed < 0)) fail('镜头种子必须是非负安全整数。');
-            if (!Array.isArray(entry.referenceIds) || entry.referenceIds.length > 20 || entry.referenceIds.some(id => !state.assets.some(asset => asset.id === id))) fail('参考素材无效，最多选择二十张。');
+            if (!Array.isArray(entry.referenceIds) || entry.referenceIds.length > 20 || entry.referenceIds.some(id => !allowedAssets.some(asset => asset.id === id))) fail('参考素材未加入本项目或超过二十张，请先从素材库选用。');
             const characterIds = entry.characterIds ?? characters.map(item => item.id);
             if (!Array.isArray(characterIds) || new Set(characterIds).size !== characterIds.length || characterIds.some(id => !characters.some(item => item.id === id))) fail('镜头出场角色无效。');
             let director;
