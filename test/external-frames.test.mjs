@@ -45,6 +45,24 @@ test('external import copies by default, keeps video history and requires explic
  h.frames.approve(h.project,h.shot,h.state.jobs.find(j=>j.id===job.id));assert.equal(h.shot.confirmedFrameJobId,job.id);assert.equal(h.shot.frameApproval.sha256,job.externalFrame.sha256);
 });
 
+test('path inspection is read-only, works while generating and leaves no picker lock',options,async t=>{
+ const h=fixture(t),path=h.source(),before=structuredClone(h.state);h.setBusy(true);
+ const result=await h.request('/api/frames/inspect',{localPath:path});
+ assert.equal(result.status,200);assert.equal(result.body.path,path);assert.equal(result.body.name,'external.png');assert.equal(result.body.width,32);assert.equal(result.body.height,48);
+ assert.deepEqual(Buffer.from(result.body.dataUrl.split(',')[1],'base64'),readFileSync(path));assert.deepEqual(h.state,before);assert.equal(h.saves(),0);
+ assert.equal(existsSync(h.storage.projectFolder(h.project)),false);
+ assert.equal(await h.frames.handle({method:'POST'}, {},new URL('/api/frames/pick','http://localhost')),false);
+ h.setBusy(false);assert.equal((await h.request(`/api/projects/${h.project.id}/frames/import`,{shotId:h.shot.id,localPath:path})).status,200);assert.ok(existsSync(path));
+});
+
+test('path inspection rejects missing, relative, corrupt and oversized sources without mutation',options,async t=>{
+ const h=fixture(t),before=structuredClone(h.state);
+ for(const localPath of [undefined,42,'relative.png',resolve(h.root,'missing.png'),h.source('bad.txt'),h.source('bad.png',Buffer.from('broken')),h.source('too-big.png',Buffer.alloc(20*1024*1024+1))]){
+  await assert.rejects(h.request('/api/frames/inspect',{localPath}),e=>[400,404].includes(e.status));
+ }
+ assert.deepEqual(h.state,before);assert.equal(h.saves(),0);assert.ok(existsSync(resolve(h.root,'bad.png')));
+});
+
 test('explicit move removes the source only after successful validated registration',options,async t=>{
  const h=fixture(t),source=h.source();const {body}=await h.request(`/api/projects/${h.project.id}/frames/import`,{shotId:h.shot.id,localPath:source,mode:'move'});
  assert.equal(existsSync(source),false);const stored=localMedia(h.config,primaryOutput(body.frame));assert.ok(existsSync(stored));assert.deepEqual(readFileSync(stored),png());assert.equal(h.saves(),1);

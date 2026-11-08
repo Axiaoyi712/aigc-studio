@@ -1,7 +1,7 @@
 import {existsSync,statSync,realpathSync,readFileSync,mkdirSync,copyFileSync,unlinkSync,readdirSync,constants} from 'node:fs';
 import {resolve,relative,dirname,basename,extname,sep,isAbsolute} from 'node:path';
 import {createHash,randomUUID} from 'node:crypto';
-import {execFile,execFileSync} from 'node:child_process';
+import {execFileSync} from 'node:child_process';
 import {localMedia,primaryOutput} from './media.mjs';
 import {uploadPath} from './uploads.mjs';
 import {projectAssets} from './asset-catalog.mjs';
@@ -25,12 +25,11 @@ export function inspectImage(config,appRoot,path){
 }
 
 export function createExternalFrames({state,config,storage,save,send,readBody,appRoot,isBusy}){
- const output=resolve(config.comfyRoot,'output');let picking=false;
  const isExternal=job=>job?.source==='external'&&job?.template==='external-frame';
  const findProject=id=>state.projects?.find(p=>p.id===id)||(()=>{throw fault('项目不存在。',404);})();
  const inspect=value=>inspectImage(config,appRoot,typeof value==='string'?value:localMedia(config,primaryOutput(value)));
  const publicJob=job=>({...job,outputs:(job.outputs||[]).map(f=>({...f,url:'/api/media/'+job.id+'/'+f.index+(f.contentVersion?'?v='+f.contentVersion:'')}))});
- function idle(){if(picking||isBusy?.()||(state.jobs||[]).some(j=>['submitting','queued','running','recovering'].includes(j.status))||(state.batchQueue||[]).some(q=>['waiting','dispatched'].includes(q.status)))throw fault('请等待生成、排队或导出完成，再导入首帧。',409);}
+ function idle(){if(isBusy?.()||(state.jobs||[]).some(j=>['submitting','queued','running','recovering'].includes(j.status))||(state.batchQueue||[]).some(q=>['waiting','dispatched'].includes(q.status)))throw fault('请等待生成、排队或导出完成，再导入首帧。',409);}
  function repoint(old,file){for(const u of Object.values(state.uploads||{}))if(uploadPath(config,u)?.toLowerCase()===old.toLowerCase())u.file={...file};for(const j of state.jobs||[])for(const o of j.outputs||[])if(localMedia(config,o)?.toLowerCase()===old.toLowerCase())Object.assign(o,file);}
  function register(project,shot,path,options={}){
   if(!project.shots?.includes(shot))throw fault('镜头不属于当前项目。');
@@ -61,14 +60,13 @@ export function createExternalFrames({state,config,storage,save,send,readBody,ap
   for(const shot of project.shots)for(const path of walk(resolve(storage.shotFolder(project,shot),'首帧'))){try{frameFile(project,path);if(!available(path))continue;const name=relative(storage.projectFolder(project),path).split(sep).join('/');result.push({id:name,type:'file',name:shot.title+' / '+basename(path),url:'/api/project-file/'+project.id+'?path='+encodeURIComponent(name)});}catch{}}
   return result;
  }
- async function pick(){
-  idle();picking=true;
-  try{const picked=await new Promise((ok,reject)=>execFile('powershell.exe',['-STA','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',resolve(appRoot,'scripts/pick-frame.ps1')],{encoding:'utf8',windowsHide:true,timeout:180000,maxBuffer:16384},(error,out)=>{if(error)return reject(fault('无法打开图片选择窗口，请重试。',500));try{ok(JSON.parse(out.replace(/^\uFEFF/,'')));}catch{reject(fault('图片选择窗口未返回有效文件，请重试。',500));}}));
-   if(picked.cancelled)return {cancelled:true};const info=inspect(picked.path);return {cancelled:false,path:picked.path,name:basename(picked.path),width:info.width,height:info.height,dataUrl:'data:'+mime[info.format]+';base64,'+readFileSync(picked.path).toString('base64')};
-  }finally{picking=false;}
- }
  async function handle(req,res,url){
-  if(url.pathname==='/api/frames/pick'&&req.method==='POST'){send(res,200,await pick());return true;}
+  if(url.pathname==='/api/frames/inspect'&&req.method==='POST'){
+   const {localPath}=JSON.parse((await readBody(req)).toString('utf8'));
+   if(typeof localPath!=='string'||!isAbsolute(localPath.trim()))throw fault('请输入图片的完整本地路径。');
+   let path;try{path=realpathSync(localPath.trim());}catch{throw fault('图片文件不存在，请重新选择。',404);}
+   const info=inspect(path);send(res,200,{path,name:basename(path),width:info.width,height:info.height,dataUrl:'data:'+mime[info.format]+';base64,'+readFileSync(path).toString('base64')});return true;
+  }
   const match=url.pathname.match(/^\/api\/projects\/([^/]+)\/frames\/(sources|import)$/);if(!match)return false;
   const project=findProject(match[1]);if(match[2]==='sources'&&req.method==='GET'){send(res,200,sources(project));return true;}
   if(match[2]!=='import'||req.method!=='POST')throw fault('接口不存在。',404);idle();const body=JSON.parse((await readBody(req)).toString('utf8'));
