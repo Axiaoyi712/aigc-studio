@@ -35,23 +35,27 @@ export function shotPlan(project, shot, assets) {
   const visualSettings={style:p.style,palette:p.palette,lighting:p.lighting,location:d.location||p.location,time:d.time||p.time,wardrobe:d.wardrobe||undefined};
   const referenceVersions=refs.filter(a=>a?.contentVersion).map(a=>[a.id,a.contentVersion]);
   const frameSignature=structured?hash({role:role.signature,refs:referenceIds,...(referenceVersions.length?{referenceVersions}:{}),notes:p.referenceNotes,size:imageSize(project),visualSettings,imagePrompt:shot.imagePrompt,framing:d.framing,angle:d.angle,position:d.position,foreground:d.foreground,background:d.background,start:d.start}):null;
-  const videoSignature=structured?hash({frameSignature,frameId:shot.confirmedFrameJobId,videoTemplate:project.videoTemplate,video:videoOptions,prompt:video}):null;
-  const errors=[];const warnings=[];
-  if(project.videoTemplate==='h3-reference'&&(videoOptions.frames>124||videoOptions.profile!=='draft'||videoOptions.aspect==='source'))errors.push('多参考实验路径仅支持约 3～5 秒、省显存档，并需明确画幅。');
-  if(referenceIds.length>20)errors.push('角色、场景与道具参考合计超过 20 张，请减少参考或取消本镜头继承。');
+  const manual=shot.frameApproval?.jobId===shot.confirmedFrameJobId&&Boolean(shot.frameApproval?.sha256);
+  const videoSignature=manual?hash({externalFrameHash:shot.frameApproval.sha256,frameId:shot.confirmedFrameJobId,videoTemplate:project.videoTemplate,video:videoOptions,prompt:video}):structured?hash({frameSignature,frameId:shot.confirmedFrameJobId,videoTemplate:project.videoTemplate,video:videoOptions,prompt:video}):null;
+  const imageErrors=[],videoErrors=[],warnings=[];
+  if(project.videoTemplate==='h3-reference'&&(videoOptions.frames>124||videoOptions.profile!=='draft'||videoOptions.aspect==='source'))videoErrors.push('多参考实验路径仅支持约 3～5 秒、省显存档，并需明确画幅。');
+  if(referenceIds.length>20)imageErrors.push('角色、场景与道具参考合计超过 20 张，请减少参考或取消本镜头继承。');
   if(project.videoTemplate==='h3-reference'&&referenceIds.length>3)warnings.push('Ref2VA 实验视频仍限制 3 张资产参考加 1 张分镜图；首帧生成可使用最多 20 张。');
-  if(refs.some(a=>!a))errors.push('存在已缺失的参考素材。');
-  if(image.length>6000||video.length>6000)errors.push('合成提示词超过 6000 字，请精简。');
-  if(!shot.imagePrompt?.trim())errors.push('请填写首帧画面描述。');
-  if(!shot.videoPrompt?.trim()&&!d.action)errors.push('请填写镜头动作。');
+  if(refs.some(a=>!a))imageErrors.push('存在已缺失的参考素材。');
+  if(project.videoTemplate==='h3-reference')videoErrors.push(...imageErrors);
+  if(image.length>6000)imageErrors.push('首帧合成提示词超过 6000 字，请精简。');
+  if(video.length>6000)videoErrors.push('视频合成提示词超过 6000 字，请精简。');
+  if(!shot.imagePrompt?.trim())imageErrors.push('请填写首帧画面描述。');
+  if(!shot.videoPrompt?.trim()&&!d.action)videoErrors.push('请填写镜头动作。');
+  const errors=[...new Set(manual?videoErrors:[...imageErrors,...videoErrors])];
   if(d.camera==='static'&&/跟随|推近|拉远|环绕/.test(shot.videoPrompt||''))warnings.push('固定机位与动作正文中的运镜可能冲突，请核对。');
   if(d.dialogue.length>videoOptions.frames/24*6)warnings.push('台词相对镜头时长较长，建议拆分或延长。');
   const previous=project.shots[project.shots.findIndex(s=>s.id===shot.id)-1];
   if(previous?.director)for(const key of ['holding','position','gaze','motion','light'])if(previous.director.end?.[key]&&d.start[key]&&previous.director.end[key]!==d.start[key])warnings.push(`与上一镜头的 ${({holding:'持物',position:'站位',gaze:'视线',motion:'运动',light:'光照'})[key]} 状态不同，请确认是有意变化。`);
-  return {shotId:shot.id,promptMode:generalPrompt?'general':'detailed',imagePrompt:image,videoPrompt:video,video:videoOptions,referenceIds,refs:refs.filter(Boolean),size:imageSize(project),characterSignature:role.signature,frameSignature,videoSignature,errors,warnings};
+  return {shotId:shot.id,promptMode:generalPrompt?'general':'detailed',imagePrompt:image,videoPrompt:video,video:videoOptions,referenceIds,refs:refs.filter(Boolean),size:imageSize(project),characterSignature:role.signature,frameSignature,videoSignature,errors,imageErrors,videoErrors,warnings};
 }
-export function frameMatches(project,shot,job,assets){const p=shotPlan(project,shot,assets);return Boolean(job?.status==='success'&&!job.deletedAt&&primaryOutput(job)?.kind==='image'&&(!p.characterSignature||job.characterSignature===p.characterSignature)&&(!p.frameSignature||job.frameSignature===p.frameSignature));}
-export function videoMatches(project,shot,job,assets){const p=shotPlan(project,shot,assets);return Boolean(job?.status==='success'&&!job.deletedAt&&primaryOutput(job)?.kind==='video'&&job.frameJobId===shot.confirmedFrameJobId&&(!p.characterSignature||job.characterSignature===p.characterSignature)&&(!p.videoSignature||job.videoSignature===p.videoSignature));}
+export function frameMatches(project,shot,job,assets){const p=shotPlan(project,shot,assets),file=primaryOutput(job);if(job?.source==='external')return Boolean(job.status==='success'&&!job.deletedAt&&!job.externalFrame?.invalid&&file?.kind==='image'&&shot.confirmedFrameJobId===job.id&&shot.frameApproval?.jobId===job.id&&shot.frameApproval.sha256===file.sha256);return Boolean(job?.status==='success'&&!job.deletedAt&&file?.kind==='image'&&(!p.characterSignature||job.characterSignature===p.characterSignature)&&(!p.frameSignature||job.frameSignature===p.frameSignature));}
+export function videoMatches(project,shot,job,assets){const p=shotPlan(project,shot,assets),manual=shot.frameApproval?.jobId===shot.confirmedFrameJobId&&shot.frameApproval?.sha256;return Boolean(job?.status==='success'&&!job.deletedAt&&primaryOutput(job)?.kind==='video'&&job.frameJobId===shot.confirmedFrameJobId&&(manual?job.externalFrameHash===manual:!p.characterSignature||job.characterSignature===p.characterSignature)&&(!p.videoSignature||job.videoSignature===p.videoSignature));}
 export function validateEdit(value={}, job) {
   const count=primaryOutput(job)?.metadata?.frame_count;
   const edit={jobId:job?.id||null,inFrame:Number(value.inFrame??0),outFrame:value.outFrame==null||value.outFrame===''?null:Number(value.outFrame),gain:Number(value.gain??1),mute:Boolean(value.mute),fade:Number(value.fade??0.08),notes:String(value.notes||'').slice(0,1000)};

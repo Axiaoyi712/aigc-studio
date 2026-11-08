@@ -10,9 +10,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: npm test
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
       - run: python -m pip install -r requirements-media.txt
+      - shell: pwsh
+        run: |
+          $env:AIGC_TEST_PYTHON = (Get-Command python).Source
+          npm test
       - run: python test/test_media.py

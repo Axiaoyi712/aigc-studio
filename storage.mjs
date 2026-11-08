@@ -75,5 +75,5 @@ export function createStorage(config,state,dataRoot){
   if(file&&!url.searchParams.has('group'))await new Promise((ok,reject)=>execFile('powershell.exe',['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',fileURLToPath(new URL('./scripts/reveal-file.ps1',import.meta.url)),'-LiteralPath',file],{windowsHide:true,timeout:15000},error=>error?reject(Object.assign(Error('定位原文件失败，请复制路径查看。'),{status:500})):ok()));
   else await new Promise((ok,reject)=>{const child=spawn('explorer.exe',[path],{windowsHide:true,stdio:'ignore'});child.once('error',error=>reject(Object.assign(Error('无法打开资源管理器：'+error.message),{status:500})));child.once('spawn',()=>{child.unref();ok();});});send(res,200,{path,file,message:file?'已定位原文件':'已请求打开文件夹'});return true;
  }
- return {sync,prefix,imageName,handle,root,projectFolder,managed,digest,storeFile:intern};
+ return {sync,prefix,imageName,handle,root,projectFolder,shotFolder,managed,digest,storeFile:intern,relocate};
 }

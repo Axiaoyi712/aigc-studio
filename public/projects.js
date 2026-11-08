@@ -4,6 +4,7 @@ import { showPromptPicker } from './prompts.js';
 import { mountProductionUI, updateProductionUI, productionClick, productionInput } from './production-ui.js';
 import { normalizeProduction } from './director-options.js';
 import { upscaleMarkup,upscaleClick } from './upscale.js';
+import { openFrameImport } from './frame-import.js';
 const $ = selector => document.querySelector(selector);
 const h = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
 const names = { waiting: '待执行', dispatched: '处理中', submitting: '提交中', queued: '排队中', running: '生成中', recovering: '恢复连接中', success: '已完成', failed: '失败', cancelled: '已取消' };
@@ -37,8 +38,11 @@ function notice(message, error = false) {
 }
 function working() { return snapshot?.queue.some(item => ['waiting', 'dispatched'].includes(item.status))||snapshot?.jobs.some(j=>j.enhancement&&['submitting','running'].includes(j.status)); }
 function job(id) { return snapshot?.jobs.find(item => item.id === id); }
-function matchesCharacter(shot, item) { const plan=snapshot?.plans?.find(p=>p.shotId===shot.id);const signature = snapshot?.characterSignatures?.[shot.id]; return (!signature || item?.characterSignature === signature)&&(!plan?.frameSignature||item?.frameSignature===plan.frameSignature); }
-function videoReady(shot) { const item = job(shot.videoJobId),plan=snapshot?.plans?.find(p=>p.shotId===shot.id); return item?.status === 'success' && item.frameJobId === shot.confirmedFrameJobId && matchesCharacter(shot, item)&&(!plan?.videoSignature||item.videoSignature===plan.videoSignature); }
+function externalFrame(item) { return item?.source === 'external' || !!item?.externalFrame; }
+function approvedExternal(shot, item) { return externalFrame(item) && item?.status === 'success' && shot.confirmedFrameJobId === item.id && shot.frameApproval?.jobId === item.id && !!item.outputs?.[0]?.sha256 && shot.frameApproval.sha256 === item.outputs[0].sha256; }
+function matchesCharacter(shot, item) { if(externalFrame(item))return item?.status==='success'&&!!item.outputs?.[0]?.sha256;const plan=snapshot?.plans?.find(p=>p.shotId===shot.id);const signature = snapshot?.characterSignatures?.[shot.id]; return (!signature || item?.characterSignature === signature)&&(!plan?.frameSignature||item?.frameSignature===plan.frameSignature); }
+function videoReady(shot) { const item = job(shot.videoJobId),plan=snapshot?.plans?.find(p=>p.shotId===shot.id),frame=job(shot.confirmedFrameJobId);return item?.status === 'success' && item.frameJobId === shot.confirmedFrameJobId && (externalFrame(frame)?approvedExternal(shot,frame)&&item.externalFrameHash===shot.frameApproval.sha256:matchesCharacter(shot,item))&&(!plan?.videoSignature||item.videoSignature===plan.videoSignature); }
+function showFrameImport(shotId, file) { const shot=draft?.shots.find(item=>item.id===shotId);if(!shot)return;void openFrameImport({project:draft,shot,api,save:saveProject,reload:load,notice,perform,isBusy:()=>busy||working(),file}); }
 async function perform(action) {
   if (busy) return;
   busy = true;
@@ -130,11 +134,16 @@ function renderResults() {
     const previous = snapshot.project.shots[index - 1];
     const canContinue = previous && videoReady(previous);
     const characterSignature = snapshot.characterSignatures?.[shot.id];
-    const staleCharacter = image?.status==='success'&&!matchesCharacter(shot,image);
-    const key = JSON.stringify([characterSignature, shot, image?.id, image?.status, image?.error, video?.status, video?.error, snapshot.jobs.filter(j=>j.enhancement&&j.shotId===shot.id).map(j=>[j.id,j.status,j.progress]), isWorking, previous?.id, previous?.videoJobId, canContinue]);
+    const plan = snapshot.plans?.find(item => item.shotId === shot.id);
+    const isExternal = externalFrame(image), confirmed = isExternal ? approvedExternal(shot,image) : shot.confirmedFrameJobId === image?.id && !!image;
+    const staleCharacter = !isExternal&&image?.status==='success'&&!matchesCharacter(shot,image);
+    const checkExternal = confirmed&&isExternal&&plan?.frameSignature&&shot.frameApproval?.frameSignature!==plan.frameSignature;
+    const key = JSON.stringify([characterSignature, plan?.frameSignature, plan?.videoSignature, shot, image?.id, image?.status, image?.error, image?.outputs?.[0]?.sha256, video?.status, video?.error, snapshot.jobs.filter(j=>j.enhancement&&j.shotId===shot.id).map(j=>[j.id,j.status,j.progress]), isWorking, previous?.id, previous?.videoJobId, canContinue]);
     if (signatures.get(shot.id) === key) continue;
     signatures.set(shot.id, key);
-    container.innerHTML = `<div class="shot-image-result">${staleCharacter ? '<p class="notice error">首帧对应的设定或提示词已变化，请重做并确认首帧。</p>' : ''}<h3>候选首帧 <span>${shot.confirmedFrameJobId === image?.id && image ? '已确认' : '待确认'}</span></h3>${image?.outputs[0] ? `<img src="${image.outputs[0].url}" alt="${h(shot.title)}的候选首帧">` : `<div class="shot-placeholder">${image ? names[image.status] : '尚未生成首帧'}</div>`}<select aria-label="首帧版本" class="image-version" ${isWorking ? 'disabled' : ''}>${shot.imageHistory.map(id => job(id)).filter(item => item?.status === 'success').map((item, i) => `<option value="${item.id}" ${item.id === image?.id ? 'selected' : ''}>首帧版本 ${i + 1} · ${item.sourceVideoJobId ? '上一段尾帧' : '种子 ' + item.seed}</option>`).join('')}</select>${index > 0 ? `<button type="button" data-use-previous-tail class="project-button" ${!canContinue || isWorking ? 'disabled' : ''}>使用上一段尾帧</button><p class="field-help">${image?.sourceVideoJobId ? (image.sourceVideoJobId === previous.videoJobId ? '当前首帧来自上一段视频的最后一帧，已自动确认。' : '当前首帧来自旧视频的尾帧；上一段版本已变化，可重新提取。') : '上一镜头视频完成后，可用它的最后一帧接着生成本镜头。'}</p>` : ''}<button type="button" data-confirm-frame class="project-button" ${!shot.imageHistory.some(id => job(id)?.status === 'success') || isWorking ? 'disabled' : ''}>确认所选首帧</button></div><div class="shot-video-result"><h3>视频 <span>${video ? names[video.status] : `${(normalizeVideoOptions(draft.video).frames / 24).toFixed(2)} 秒`}</span></h3>${video?.outputs[0] ? `<video src="${video.outputs[0].url}" controls playsinline preload="metadata" aria-label="${h(shot.title)}的视频"></video>` : `<div class="shot-placeholder">${video ? names[video.status] : '确认首帧后生成'}</div>`}${video?.status === 'success' && !videoReady(shot) ? '<p class="field-help">此视频来自另一版首帧，需要重做或切回对应首帧。</p>' : ''}<select aria-label="视频版本" class="video-version" ${isWorking ? 'disabled' : ''}><option value="">选择使用的视频版本</option>${shot.videoHistory.map(id => job(id)).filter(item => item?.status === 'success').map((item, i) => `<option value="${item.id}" ${item.id === shot.videoJobId ? 'selected' : ''}>视频版本 ${i + 1}${item.enhancement?' · AI精修'+h(item.enhancement.target):''}</option>`).join('')}</select>${video?.outputs[0] ? `<a href="${video.outputs[0].url}" target="_blank" rel="noopener" class="project-button">查看视频原文件</a>` : ''}${upscaleMarkup(video,snapshot.jobs)}${image?.error || video?.error ? `<p class="field-help">${h(image?.error || video?.error)}</p>` : ''}</div>`;
+    container.innerHTML = `<div class="shot-image-result">${staleCharacter ? '<p class="notice error">首帧对应的设定或提示词已变化，请重做并确认首帧。</p>' : ''}${checkExternal?'<p class="notice">设定或提示词已变化，请人工核对此外部首帧。原图仍可使用；无需强制重绘。</p>':''}<div class="frame-result-heading"><h3>候选首帧 <span>${confirmed ? '已确认' : '待确认'}</span></h3><button type="button" class="project-button frame-import-button" data-import-frame>导入／选用首帧</button></div>${image?.outputs[0] ? `<img src="${image.outputs[0].url}" alt="${h(shot.title)}的候选首帧">` : `<div class="shot-placeholder">${image ? names[image.status] : '尚未生成首帧'}</div>`}<p class="frame-drop-help">可拖入一张外部图片，加入本镜头候选。</p><select aria-label="首帧版本" class="image-version" ${isWorking ? 'disabled' : ''}>${shot.imageHistory.map(id => job(id)).filter(item => item?.status === 'success').map((item, i) => `<option value="${item.id}" ${item.id === image?.id ? 'selected' : ''}>首帧版本 ${i + 1} · ${externalFrame(item) ? '外部导入 · '+h(item.externalFrame?.name||'图片') : item.sourceVideoJobId ? '上一段尾帧' : '种子 ' + item.seed}</option>`).join('')}</select>${index > 0 ? `<button type="button" data-use-previous-tail class="project-button" ${!canContinue || isWorking ? 'disabled' : ''}>使用上一段尾帧</button><p class="field-help">${image?.sourceVideoJobId ? (image.sourceVideoJobId === previous.videoJobId ? '当前首帧来自上一段视频的最后一帧，已自动确认。' : '当前首帧来自旧视频的尾帧；上一段版本已变化，可重新提取。') : '上一镜头视频完成后，可用它的最后一帧接着生成本镜头。'}</p>` : ''}<button type="button" data-confirm-frame class="project-button" ${!shot.imageHistory.some(id => job(id)?.status === 'success') || isWorking ? 'disabled' : ''}>确认所选首帧</button></div><div class="shot-video-result"><h3>视频 <span>${video ? names[video.status] : `${(normalizeVideoOptions(draft.video).frames / 24).toFixed(2)} 秒`}</span></h3>${video?.outputs[0] ? `<video src="${video.outputs[0].url}" controls playsinline preload="metadata" aria-label="${h(shot.title)}的视频"></video>` : `<div class="shot-placeholder">${video ? names[video.status] : '确认首帧后生成'}</div>`}${video?.status === 'success' && !videoReady(shot) ? '<p class="field-help">此视频的首帧或视频设置与当前选择不一致，可切回对应版本或重新生成。</p>' : ''}<select aria-label="视频版本" class="video-version" ${isWorking ? 'disabled' : ''}><option value="">选择使用的视频版本</option>${shot.videoHistory.map(id => job(id)).filter(item => item?.status === 'success').map((item, i) => `<option value="${item.id}" ${item.id === shot.videoJobId ? 'selected' : ''}>视频版本 ${i + 1}${item.enhancement?' · AI精修'+h(item.enhancement.target):''}</option>`).join('')}</select>${video?.outputs[0] ? `<a href="${video.outputs[0].url}" target="_blank" rel="noopener" class="project-button">查看视频原文件</a>` : ''}${upscaleMarkup(video,snapshot.jobs)}${image?.error || video?.error ? `<p class="field-help">${h(image?.error || video?.error)}</p>` : ''}</div>`;
+    const card=container.closest('[data-shot]');
+    for(const button of card.querySelectorAll('[data-generate="video"],[data-quick-generate="video"]'))button.textContent=isExternal?'用当前首帧生成视频':button.hasAttribute('data-quick-generate')?'生成视频':'生成 / 重做视频';
   }
   for (const button of document.querySelectorAll('[data-generate],[data-quick-generate]')) button.disabled = isWorking;
   const exportSignature = JSON.stringify(snapshot.exports);
@@ -152,6 +161,7 @@ async function saveProject() {
   try{await saving;}finally{saving=null;if(dirty)scheduleSave();}
 }
 async function batch(kind, shotId) {
+  if(kind==='both'&&snapshot.project.shots.some(shot=>(!shotId||shot.id===shotId)&&externalFrame(job(frameChoices.get(shot.id)||shot.imageJobId)))&&!confirm('本镜头已有外部首帧。\n\n“一键生成首帧＋视频”会重新生成一张图片并自动确认，再生成视频。若要使用当前导入的图片，请取消，并点击“用当前首帧生成视频”。\n\n继续重新生成图片和视频？'))return;
   if (kind === 'video') {
     for (const shot of snapshot.project.shots.filter(shot => shotId ? shot.id === shotId : !videoReady(shot))) {
       const choice = frameChoices.get(shot.id) || shot.imageJobId;
@@ -212,6 +222,7 @@ $('#projects-panel').addEventListener('change', event => {
 });
 $('#projects-panel').addEventListener('click', event => {
   const button = event.target.closest('button'); if (!button) return;
+  if(button.hasAttribute('data-import-frame')){showFrameImport(button.closest('[data-shot]').dataset.shot);return;}
   if (button.hasAttribute('data-toggle-shot')) {
     event.preventDefault();
     const card = button.closest('[data-shot]'), content = card.querySelector('.shot-content');
@@ -301,6 +312,9 @@ $('#projects-panel').addEventListener('click', event => {
     }
   });
 });
+$('#projects-panel').addEventListener('dragover',event=>{const target=event.target.closest('.shot-image-result');if(!target||!event.dataTransfer.types.includes('Files'))return;event.preventDefault();event.dataTransfer.dropEffect='copy';target.classList.add('frame-drag-over');});
+$('#projects-panel').addEventListener('dragleave',event=>{const target=event.target.closest('.shot-image-result');if(target&&!target.contains(event.relatedTarget))target.classList.remove('frame-drag-over');});
+$('#projects-panel').addEventListener('drop',event=>{const target=event.target.closest('.shot-image-result');if(!target)return;event.preventDefault();target.classList.remove('frame-drag-over');if(event.dataTransfer.files.length!==1){notice('一次请拖入一张首帧图片。',true);return;}showFrameImport(target.closest('[data-shot]').dataset.shot,event.dataTransfer.files[0]);});
 let polling = false;
 setInterval(async () => {
   if (!visible || !currentId || polling || busy) return;

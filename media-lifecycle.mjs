@@ -1,5 +1,5 @@
 import {existsSync,unlinkSync,rmSync,realpathSync} from 'node:fs';
-import {resolve,sep} from 'node:path';
+import {resolve,sep,extname} from 'node:path';
 import {localMedia} from './media.mjs';
 import {uploadPath} from './uploads.mjs';
 import {pruneCatalog} from './asset-catalog.mjs';
@@ -26,6 +26,7 @@ export function createMediaLifecycle({state,config,dataRoot,storage}){
     s.referenceIds=(s.referenceIds||[]).filter(id=>!affectedAssets.has(id));
     for(const name of ['imageHistory','videoHistory'])s[name]=(s[name]||[]).filter(id=>!affectedJobs.has(id));
     for(const name of ['imageJobId','confirmedFrameJobId','videoJobId'])if(affectedJobs.has(s[name]))s[name]=null;
+    if(affectedJobs.has(s.frameApproval?.jobId))delete s.frameApproval;
    }
   }
   for(const j of state.jobs||[])j.images=(j.images||[]).filter(id=>!affectedUploads.has(id));
@@ -39,19 +40,21 @@ export function createMediaLifecycle({state,config,dataRoot,storage}){
  function removeJobs(ids){
   const jobs=ids.map(id=>state.jobs.find(j=>j.id===id)).filter(Boolean),paths=jobs.flatMap(j=>(j.outputs||[]).filter(f=>['output','temp'].includes(f.type)).map(f=>localMedia(config,f)));
   const stamp=new Date().toISOString(),result=detach(paths,stamp);for(const j of jobs){j.deletedAt??=stamp;j.deletedReason='permanent-media-deletion';j.outputs=[];}
-  const selected=new Set(ids);for(const p of state.projects||[])for(const s of p.shots){for(const name of ['imageHistory','videoHistory'])s[name]=(s[name]||[]).filter(id=>!selected.has(id));for(const name of ['imageJobId','confirmedFrameJobId','videoJobId'])if(selected.has(s[name]))s[name]=null;}
+  const selected=new Set(ids);for(const p of state.projects||[])for(const s of p.shots){for(const name of ['imageHistory','videoHistory'])s[name]=(s[name]||[]).filter(id=>!selected.has(id));for(const name of ['imageJobId','confirmedFrameJobId','videoJobId'])if(selected.has(s[name]))s[name]=null;if(selected.has(s.frameApproval?.jobId))delete s.frameApproval;}
   return result;
  }
  function removeProject(id){
   const p=state.projects.find(p=>p.id===id);if(!p)return;
   const folder=storage.projectFolder(p);if(!folder.startsWith(root+sep)||existsSync(folder)&&!realpathSync(folder).startsWith(realpathSync(root)+sep))throw fault('项目目录无效，拒绝删除。');
   const owned=state.assets.filter(a=>a.ownerProjectId===id),sharedUploads=new Set(state.assets.filter(a=>a.ownerProjectId!==id).map(a=>a.uploadId));
-  const jobs=state.jobs.filter(j=>j.projectId===id),extras=[...(state.exports||[]).filter(e=>e.projectId===id).map(e=>e.storagePath||resolve(dataRoot,'exports',e.id+'.mp4')),...owned.filter(a=>!sharedUploads.has(a.uploadId)).map(a=>uploadPath(config,state.uploads[a.uploadId]))];
+  const sharedFiles=[...state.assets.filter(a=>a.ownerProjectId!==id).map(a=>uploadPath(config,state.uploads[a.uploadId])),...state.jobs.filter(j=>j.projectId!==id&&!j.deletedAt).flatMap(j=>(j.outputs||[]).map(f=>localMedia(config,f)))].filter(Boolean),sharedPaths=new Set(sharedFiles.map(key));
+  // A shared original must leave the deleted directory before the directory itself is removed.
+  for(const path of new Set(sharedFiles))if(key(path).startsWith(key(folder)+sep)&&existsSync(path)){const stored=storage.relocate(path,resolve(root,'公共素材库','首帧',storage.digest(path)+extname(path)));sharedPaths.delete(key(path));sharedPaths.add(key(stored.path));}
+  const jobs=state.jobs.filter(j=>j.projectId===id),extras=[...(state.exports||[]).filter(e=>e.projectId===id).map(e=>e.storagePath||resolve(dataRoot,'exports',e.id+'.mp4')),...owned.filter(a=>!sharedUploads.has(a.uploadId)).map(a=>uploadPath(config,state.uploads[a.uploadId])).filter(path=>!sharedPaths.has(key(path)))];
   // Validate extras before deleting any project output.
-  const sharedPaths=new Set(state.assets.filter(a=>a.ownerProjectId!==id).map(a=>key(uploadPath(config,state.uploads[a.uploadId]))));
   const retained=jobs.filter(j=>(j.outputs||[]).some(f=>sharedPaths.has(key(localMedia(config,f)))));
   extras.filter(Boolean).forEach(safe);removeJobs(jobs.filter(j=>!retained.includes(j)).map(j=>j.id));detach(extras);
-  for(const j of retained){j.deletedAt=new Date().toISOString();j.outputs=[];for(const other of state.projects)for(const s of other.shots){s.imageHistory=(s.imageHistory||[]).filter(x=>x!==j.id);s.videoHistory=(s.videoHistory||[]).filter(x=>x!==j.id);for(const name of ['imageJobId','confirmedFrameJobId','videoJobId'])if(s[name]===j.id)s[name]=null;}}
+  for(const j of retained){j.deletedAt=new Date().toISOString();j.outputs=[];for(const other of state.projects)for(const s of other.shots){s.imageHistory=(s.imageHistory||[]).filter(x=>x!==j.id);s.videoHistory=(s.videoHistory||[]).filter(x=>x!==j.id);for(const name of ['imageJobId','confirmedFrameJobId','videoJobId'])if(s[name]===j.id)s[name]=null;if(s.frameApproval?.jobId===j.id)delete s.frameApproval;}}
   state.projects=state.projects.filter(p=>p.id!==id);state.batchQueue=(state.batchQueue||[]).filter(q=>q.projectId!==id);
   if(existsSync(folder))rmSync(folder,{recursive:true,force:true});
  }

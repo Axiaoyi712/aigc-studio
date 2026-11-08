@@ -14,7 +14,7 @@ const active = new Set(['submitting', 'queued', 'running', 'recovering']);
 const pending = item => ['waiting', 'dispatched'].includes(item.status);
 function fail(message, status = 400) { throw Object.assign(new Error(message), { status }); }
 function text(value, limit = 6000) { return String(value ?? '').trim().slice(0, limit); }
-export function createProjects({ state, save, submitJob, refresh, json, upstream, publicJob, config, appRoot, dataRoot, send, readBody, isEnhancing=()=>false,removeProject,catalog }) {
+export function createProjects({ state, save, submitJob, refresh, json, upstream, publicJob, config, appRoot, dataRoot, send, readBody, isEnhancing=()=>false,removeProject,catalog,externalFrames }) {
   state.projects ??= [];
   state.assets ??= [];
   state.batchQueue ??= [];
@@ -74,15 +74,19 @@ export function createProjects({ state, save, submitJob, refresh, json, upstream
           const input = { ...item.input, requestId: item.id };
           if (item.kind === 'video') {
             const frame=imageJob(item.frameJobId);
+            if(frame.source==='external'){
+              const info=externalFrames.inspect(frame);
+              if(!frameMatches(project,shot,frame,state.assets)||info.sha256!==item.externalFrameHash)fail('外部首帧已更改或尚未确认，请重新选用并确认后生成。');
+            }
             if(item.autoConfirmFrame){if(!frameMatches(project,shot,frame,state.assets))fail('自动生成的首帧与当前镜头设定不匹配，请重新生成。');shot.confirmedFrameJobId=frame.id;}
             input.images = [...(input.template==='h3-reference'?input.images:[]),await uploadFrame(frame)];
           }
-          job = await submitJob(input, { projectId: project.id, shotId: shot.id, frameJobId: item.frameJobId, characterSignature: item.characterSignature, frameSignature: item.frameSignature, videoSignature: item.videoSignature, productionSnapshot: item.productionSnapshot });
+          job = await submitJob(input, { projectId: project.id, shotId: shot.id, frameJobId: item.frameJobId, externalFrameHash:item.externalFrameHash, characterSignature: item.characterSignature, frameSignature: item.frameSignature, videoSignature: item.videoSignature, productionSnapshot: item.productionSnapshot });
         }
         item.status = 'dispatched';
         const history = item.kind === 'image' ? shot.imageHistory : shot.videoHistory;
         if (!history.includes(job.id)) history.push(job.id);
-        if (item.kind === 'image') { shot.imageJobId = job.id; shot.confirmedFrameJobId = null; }
+        if (item.kind === 'image') { shot.imageJobId = job.id; shot.confirmedFrameJobId = null; delete shot.frameApproval; }
         else {shot.videoJobId = job.id;if(item.autoConfirmFrame)shot.edit=validateEdit({},job);}
         updateItems();
       } catch (error) {
@@ -114,8 +118,9 @@ export function createProjects({ state, save, submitJob, refresh, json, upstream
       let frameJobId;
       const character = characterContext(project, shot);
       const plan = shotPlan(project,kind==='video'&&newFrameId?{...shot,confirmedFrameJobId:newFrameId}:shot,state.assets);
-      if(plan.referenceIds.some(id=>!projectAssets(state,project).some(a=>a.id===id)))fail('镜头引用了未加入本项目的素材，请先从素材库选用。');
-      if (plan.errors.length) fail(`镜头「${shot.title}」：${plan.errors.join('；')}`);
+      if((kind==='image'||!shot.frameApproval||project.videoTemplate==='h3-reference')&&plan.referenceIds.some(id=>!projectAssets(state,project).some(a=>a.id===id)))fail('镜头引用了未加入本项目的素材，请先从素材库选用。');
+      const errors=kind==='image'?plan.imageErrors:!newFrameId&&shot.frameApproval?plan.videoErrors:plan.errors;
+      if (errors.length) fail(`镜头「${shot.title}」：${errors.join('；')}`);
       if (kind === 'image') {
         const assets = plan.referenceIds.map(id => state.assets.find(asset => asset.id === id) ?? fail('参考素材已不存在。'));
         if (assets.length > 20) fail(`镜头「${shot.title}」的全部参考合计超过 20 张，请减少参考图。`);
@@ -126,7 +131,7 @@ export function createProjects({ state, save, submitJob, refresh, json, upstream
         if(newFrameId)frameJobId=newFrameId;
         else{
           const frame = imageJob(shot.confirmedFrameJobId);
-          if (character.signature && frame.characterSignature !== character.signature) fail(`镜头「${shot.title}」角色设定已变化，请先重做并确认使用当前角色参考的首帧。`);
+          if (frame.source!=='external'&&character.signature && frame.characterSignature !== character.signature) fail(`镜头「${shot.title}」角色设定已变化，请先重做并确认使用当前角色参考的首帧。`);
           if (!frameMatches(project, shot, frame, state.assets)) fail(`镜头「${shot.title}」画面设定已变化，请重做并确认首帧。`);
           frameJobId = frame.id;
         }
@@ -134,7 +139,7 @@ export function createProjects({ state, save, submitJob, refresh, json, upstream
         input = { template: project.videoTemplate, prompt: plan.videoPrompt, images, seed: shot.seed, size: '512x512', video: { ...plan.video, camera: 'none', action: 'none', shot: 'none', style: 'preserve', pace: 'none' } };
       }
       if (input.prompt.length > 6000) fail(`镜头「${shot.title}」合并后的描述超过 6000 字。`);
-      items.push({ id: kind==='image'&&newFrameId?newFrameId:randomUUID(), batchId, projectId: project.id, shotId: shot.id, kind, frameJobId, ...(kind==='video'&&newFrameId?{dependsOnId:newFrameId,autoConfirmFrame:true}:{}), characterSignature: character.signature, frameSignature: plan.frameSignature, videoSignature: plan.videoSignature, productionSnapshot: { production: structuredClone(project.production||{}), director: structuredClone(shot.director||{}), generalPrompt:shot.generalPrompt||undefined, references: plan.refs.map(a=>({id:a.id,name:a.name,uploadId:a.uploadId})), imagePrompt: plan.imagePrompt, videoPrompt: plan.videoPrompt, size: plan.size, videoTemplate: project.videoTemplate }, input, status: 'waiting', createdAt: new Date().toISOString() });
+      items.push({ id: kind==='image'&&newFrameId?newFrameId:randomUUID(), batchId, projectId: project.id, shotId: shot.id, kind, frameJobId, externalFrameHash:kind==='video'&&!newFrameId?shot.frameApproval?.sha256:undefined, ...(kind==='video'&&newFrameId?{dependsOnId:newFrameId,autoConfirmFrame:true}:{}), characterSignature: character.signature, frameSignature: plan.frameSignature, videoSignature: plan.videoSignature, productionSnapshot: { production: structuredClone(project.production||{}), director: structuredClone(shot.director||{}), generalPrompt:shot.generalPrompt||undefined, references: plan.refs.map(a=>({id:a.id,name:a.name,uploadId:a.uploadId})), imagePrompt: plan.imagePrompt, videoPrompt: plan.videoPrompt, size: plan.size, videoTemplate: project.videoTemplate }, input, status: 'waiting', createdAt: new Date().toISOString() });
       }
     }
     state.batchQueue.push(...items); save();
@@ -187,6 +192,7 @@ export function createProjects({ state, save, submitJob, refresh, json, upstream
       if (!shot.imageHistory.includes(frameJob.id)) shot.imageHistory.push(frameJob.id);
       shot.imageJobId = frameJob.id;
       shot.confirmedFrameJobId = frameJob.id;
+      delete shot.frameApproval;
       save();
       return { shot, frame: publicJob(frameJob), sourceVideoJobId: source.id };
     } finally { tailProjects.delete(project.id); }
@@ -326,11 +332,11 @@ export function createProjects({ state, save, submitJob, refresh, json, upstream
           const job = jobById(body.jobId);
           if (!history.includes(body.jobId) || job?.status !== 'success') fail('此版本不可用。');
           const signature = characterContext(project, shot).signature;
-          if (signature && job.characterSignature !== signature) fail('该版本来自旧角色设定，请重做首帧或选择当前设定对应的版本。');
+          if (job.source!=='external'&&!(body.kind==='video'&&shot.frameApproval)&&signature && job.characterSignature !== signature) fail('该版本来自旧角色设定，请重做首帧或选择当前设定对应的版本。');
           const plan=shotPlan(project,shot,state.assets);
-          if(body.kind==='image'&&plan.frameSignature&&job.frameSignature!==plan.frameSignature)fail('该首帧来自旧画面设定，请重做或恢复对应设定。');
+          if(body.kind==='image'&&job.source!=='external'&&plan.frameSignature&&job.frameSignature!==plan.frameSignature)fail('该首帧来自旧画面设定，请重做或恢复对应设定。');
           if(body.kind==='video'&&!videoMatches(project,shot,job,state.assets))fail('该视频与当前首帧或镜头设定不匹配。');
-          if (body.kind === 'image') { shot.imageJobId = job.id; shot.confirmedFrameJobId = job.id; }
+          if (body.kind === 'image') { if(job.source==='external')externalFrames.approve(project,shot,job);else{shot.imageJobId = job.id; shot.confirmedFrameJobId = job.id;delete shot.frameApproval;} }
           else { if(shot.videoJobId!==job.id)shot.edit=validateEdit({gain:shot.edit?.gain,mute:shot.edit?.mute,notes:shot.edit?.notes},job); shot.videoJobId = job.id; }
           save(); result = shot;
         } else if (parts[3] === 'export' && req.method === 'POST') { result = startExport(project); status = 201; }
