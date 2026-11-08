@@ -56,8 +56,9 @@ test('visual changes invalidate frames, motion only invalidates videos, editing 
   const video={status:'success',frameJobId:'frame',videoSignature:plan.videoSignature,outputs:[{kind:'video'}]};
   assert.ok(frameMatches(project,shot,image,[]));assert.ok(videoMatches(project,shot,video,[]));
   project.production.exportSize='1920x1080';assert.ok(videoMatches(project,shot,video,[]));
-  shot.director.action='青年低头';assert.ok(frameMatches(project,shot,image,[]));assert.ok(!videoMatches(project,shot,video,[]));
-  project.production.lighting='右侧暖光';assert.ok(!frameMatches(project,shot,image,[]));
+  shot.director.action='被正文覆盖的旧动作';assert.ok(videoMatches(project,shot,video,[]));
+  shot.videoPrompt='青年低头';assert.ok(frameMatches(project,shot,image,[]));assert.ok(!videoMatches(project,shot,video,[]));
+  shot.director.lighting='右侧暖光';assert.ok(!frameMatches(project,shot,image,[]));
 });
 test('reference overflow, camera conflicts, continuity and exclusive trim end are validated',()=>{
   const assets=Array.from({length:21},(_,i)=>({id:i+1,name:'图'+(i+1),category:'scene'}));

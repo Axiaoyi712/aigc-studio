@@ -74,20 +74,21 @@ export function createProjects({ state, save, submitJob, refresh, json, upstream
           const input = { ...item.input, requestId: item.id };
           if (item.kind === 'video') {
             const frame=imageJob(item.frameJobId);
-            if(frame.source==='external'){
+            if(frame.source==='external'||item.comparison){
               const info=externalFrames.inspect(frame);
-              if(!frameMatches(project,shot,frame,state.assets)||info.sha256!==item.externalFrameHash)fail('外部首帧已更改或尚未确认，请重新选用并确认后生成。');
+              if(frame.source==='external'&&(!frameMatches(project,shot,frame,state.assets)||info.sha256!==item.externalFrameHash))fail('外部首帧已更改或尚未确认，请重新选用并确认后生成。');
+              if(item.comparison&&info.sha256!==item.comparison.frameHash)fail('对比首帧在排队期间发生变化，请重新确认后再次对比。');
             }
             if(item.autoConfirmFrame){if(!frameMatches(project,shot,frame,state.assets))fail('自动生成的首帧与当前镜头设定不匹配，请重新生成。');shot.confirmedFrameJobId=frame.id;}
             input.images = [...(input.template==='h3-reference'?input.images:[]),await uploadFrame(frame)];
           }
-          job = await submitJob(input, { projectId: project.id, shotId: shot.id, frameJobId: item.frameJobId, externalFrameHash:item.externalFrameHash, characterSignature: item.characterSignature, frameSignature: item.frameSignature, videoSignature: item.videoSignature, productionSnapshot: item.productionSnapshot });
+          job = await submitJob(input, { projectId: project.id, shotId: shot.id, frameJobId: item.frameJobId, externalFrameHash:item.externalFrameHash, comparison:item.comparison, characterSignature: item.characterSignature, frameSignature: item.frameSignature, videoSignature: item.videoSignature, productionSnapshot: item.productionSnapshot });
         }
         item.status = 'dispatched';
         const history = item.kind === 'image' ? shot.imageHistory : shot.videoHistory;
         if (!history.includes(job.id)) history.push(job.id);
         if (item.kind === 'image') { shot.imageJobId = job.id; shot.confirmedFrameJobId = null; delete shot.frameApproval; }
-        else {shot.videoJobId = job.id;if(item.autoConfirmFrame)shot.edit=validateEdit({},job);}
+        else {if(!item.comparison)shot.videoJobId = job.id;if(item.autoConfirmFrame)shot.edit=validateEdit({},job);}
         updateItems();
       } catch (error) {
         if (error.status === 409 || error.status === 503) return;
@@ -109,16 +110,22 @@ export function createProjects({ state, save, submitJob, refresh, json, upstream
     const ids = body.shotIds;
     if (!Array.isArray(ids) || !ids.length || new Set(ids).size !== ids.length) fail('请选择镜头。');
     const shots = ids.map(id => project.shots.find(shot => shot.id === id) ?? fail('镜头不存在。'));
+    const comparing=body.compare===true;
+    if(comparing&&(requestedKind!=='video'||shots.length!==1||(shots[0].videoTemplate||project.videoTemplate)==='h3-reference'))fail('8／20步对比只适用于一个已确认首帧的普通图生视频镜头。');
+    const fixedSeed=comparing?Number(body.seed??(shots[0].seed===''?42:shots[0].seed??42)):null;
+    if(comparing&&(!Number.isSafeInteger(fixedSeed)||fixedSeed<0))fail('对比种子必须是非负安全整数。');
     const items = [];
     for (const shot of shots) {
       if (shotBusy(project.id, shot.id)) fail('选中的镜头已有排队或运行任务。', 409);
       const newFrameId=requestedKind==='both'?randomUUID():null;
-      for(const kind of requestedKind==='both'?['image','video']:[requestedKind]){
+      for(const [variant,kind] of (comparing?['video','video']:requestedKind==='both'?['image','video']:[requestedKind]).entries()){
       let input;
       let frameJobId;
       const character = characterContext(project, shot);
-      const plan = shotPlan(project,kind==='video'&&newFrameId?{...shot,confirmedFrameJobId:newFrameId}:shot,state.assets);
-      if((kind==='image'||!shot.frameApproval||project.videoTemplate==='h3-reference')&&plan.referenceIds.some(id=>!projectAssets(state,project).some(a=>a.id===id)))fail('镜头引用了未加入本项目的素材，请先从素材库选用。');
+      const selectedProject={...project,videoTemplate:comparing?(variant===0?'h3-fast':'h3-base'):(shot.videoTemplate||project.videoTemplate)};
+      const plannedShot={...shot,videoTemplate:selectedProject.videoTemplate,...(kind==='video'&&newFrameId?{confirmedFrameJobId:newFrameId}:{})};
+      const plan = shotPlan(selectedProject,plannedShot,state.assets);
+      if((kind==='image'||!shot.frameApproval||selectedProject.videoTemplate==='h3-reference')&&plan.referenceIds.some(id=>!projectAssets(state,project).some(a=>a.id===id)))fail('镜头引用了未加入本项目的素材，请先从素材库选用。');
       const errors=kind==='image'?plan.imageErrors:!newFrameId&&shot.frameApproval?plan.videoErrors:plan.errors;
       if (errors.length) fail(`镜头「${shot.title}」：${errors.join('；')}`);
       if (kind === 'image') {
@@ -127,7 +134,7 @@ export function createProjects({ state, save, submitJob, refresh, json, upstream
         input = { template: assets.length > 3 ? 'flux-multi' : ['z-image','flux-edit','flux-2ref','flux-3ref'][assets.length], prompt: plan.imagePrompt, images: assets.map(asset => asset.uploadId), seed: shot.seed, size: plan.size };
         for (const asset of assets) { const upload=state.uploads[asset.uploadId]; if(!upload) fail('参考图上传记录缺失。'); requireMedia(config,uploadFile(upload)); }
       } else {
-        if (project.videoTemplate === 'h3-reference' && plan.referenceIds.length > 3) fail('Ref2VA 实验视频最多使用 3 张资产参考加 1 张分镜图；20 张参考目前用于首帧生成。');
+        if (selectedProject.videoTemplate === 'h3-reference' && plan.referenceIds.length > 3) fail('Ref2VA 实验视频最多使用 3 张资产参考加 1 张分镜图；20 张参考目前用于首帧生成。');
         if(newFrameId)frameJobId=newFrameId;
         else{
           const frame = imageJob(shot.confirmedFrameJobId);
@@ -135,11 +142,11 @@ export function createProjects({ state, save, submitJob, refresh, json, upstream
           if (!frameMatches(project, shot, frame, state.assets)) fail(`镜头「${shot.title}」画面设定已变化，请重做并确认首帧。`);
           frameJobId = frame.id;
         }
-        const images=project.videoTemplate==='h3-reference'?plan.refs.map(a=>a.uploadId):[];
-        input = { template: project.videoTemplate, prompt: plan.videoPrompt, images, seed: shot.seed, size: '512x512', video: { ...plan.video, camera: 'none', action: 'none', shot: 'none', style: 'preserve', pace: 'none' } };
+        const images=selectedProject.videoTemplate==='h3-reference'?plan.refs.map(a=>a.uploadId):[];
+        input = { template: selectedProject.videoTemplate, prompt: plan.videoPrompt, images, seed: comparing?fixedSeed:shot.seed, size: '512x512', video: { ...plan.video, camera: 'none', action: 'none', shot: 'none', style: 'preserve', pace: 'none' } };
       }
       if (input.prompt.length > 6000) fail(`镜头「${shot.title}」合并后的描述超过 6000 字。`);
-      items.push({ id: kind==='image'&&newFrameId?newFrameId:randomUUID(), batchId, projectId: project.id, shotId: shot.id, kind, frameJobId, externalFrameHash:kind==='video'&&!newFrameId?shot.frameApproval?.sha256:undefined, ...(kind==='video'&&newFrameId?{dependsOnId:newFrameId,autoConfirmFrame:true}:{}), characterSignature: character.signature, frameSignature: plan.frameSignature, videoSignature: plan.videoSignature, productionSnapshot: { production: structuredClone(project.production||{}), director: structuredClone(shot.director||{}), generalPrompt:shot.generalPrompt||undefined, references: plan.refs.map(a=>({id:a.id,name:a.name,uploadId:a.uploadId})), imagePrompt: plan.imagePrompt, videoPrompt: plan.videoPrompt, size: plan.size, videoTemplate: project.videoTemplate }, input, status: 'waiting', createdAt: new Date().toISOString() });
+      items.push({ id: kind==='image'&&newFrameId?newFrameId:randomUUID(), batchId, projectId: project.id, shotId: shot.id, kind, frameJobId, ...(comparing?{comparison:{id:batchId,seed:fixedSeed,variant:selectedProject.videoTemplate,frameHash:primaryOutput(jobById(frameJobId))?.sha256||externalFrames.inspect(jobById(frameJobId)).sha256}}:{}), externalFrameHash:kind==='video'&&!newFrameId?shot.frameApproval?.sha256:undefined, ...(kind==='video'&&newFrameId?{dependsOnId:newFrameId,autoConfirmFrame:true}:{}), characterSignature: character.signature, frameSignature: plan.frameSignature, videoSignature: plan.videoSignature, productionSnapshot: { compilerVersion:plan.compilerVersion,motionMode:shot.motionMode||'described',adjustments:plan.adjustments,specification:plan.specification,production: structuredClone(project.production||{}), director: structuredClone(shot.director||{}), generalPrompt:shot.generalPrompt||undefined, references: plan.refs.map(a=>({id:a.id,name:a.name,uploadId:a.uploadId})), imagePrompt: plan.imagePrompt, videoPrompt: plan.videoPrompt, size: plan.size, videoTemplate: selectedProject.videoTemplate }, input, status: 'waiting', createdAt: new Date().toISOString() });
       }
     }
     state.batchQueue.push(...items); save();
@@ -309,9 +316,11 @@ export function createProjects({ state, save, submitJob, refresh, json, upstream
             if (!Array.isArray(characterIds) || new Set(characterIds).size !== characterIds.length || characterIds.some(id => !characters.some(item => item.id === id))) fail('镜头出场角色无效。');
             let director;
             if(entry.director??old?.director){try{director=normalizeDirector(entry.director??old.director);}catch(error){fail(error.message);}}
-            const frames=entry.frames?Number(entry.frames):null;if(frames){try{normalizeVideoOptions({frames});}catch(error){fail(error.message);}}
+            const frames=entry.frames?Number(entry.frames):null;if(frames){try{normalizeVideoOptions({...video,frames});}catch(error){fail(error.message);}}
             const result={ ...(old ?? { imageHistory: [], videoHistory: [] }), id: entry.id, title: text(entry.title, 80) || `镜头 ${i + 1}`, imagePrompt: text(entry.imagePrompt), videoPrompt: text(entry.videoPrompt), seed, referenceIds: [...new Set(entry.referenceIds)], characterIds, frames, inheritReferences: entry.inheritReferences!==false };
             if(entry.generalPrompt!==undefined||old?.generalPrompt!==undefined){const value=String(entry.generalPrompt??old?.generalPrompt??'').trim();if(value.length>6000)fail('总提示词不超过 6000 字。');result.generalPrompt=value;}
+            result.motionMode=entry.motionMode??old?.motionMode??'described';if(!['described','steady'].includes(result.motionMode))fail('请选择按描述生成或保稳模式。');
+            result.videoTemplate=entry.videoTemplate??old?.videoTemplate??'';if(!['','h3-fast','h3-base'].includes(result.videoTemplate))fail('镜头采样方案无效。');
             if(director)result.director=director;
             if(entry.edit){try{result.edit=validateEdit(entry.edit,jobById(old?.videoJobId));}catch(error){fail(error.message);}}
             return result;
@@ -323,7 +332,8 @@ export function createProjects({ state, save, submitJob, refresh, json, upstream
           project.shots = next; save(); result = project;
         } else if (parts[3] === 'plan' && req.method === 'GET') { result = project.shots.map(shot=>shotPlan(project,shot,state.assets)); }
         else if (parts[3] === 'use-previous-tail' && parts.length === 4 && req.method === 'POST') { result = await usePreviousTail(project, body); }
-        else if (parts[3] === 'batch' && req.method === 'POST') { result = await enqueue(project, body); status = 201; }
+        else if (parts[3] === 'batch' && req.method === 'POST') { result = await enqueue(project, {...body,compare:false}); status = 201; }
+        else if (parts[3] === 'compare' && req.method === 'POST') { result = await enqueue(project,{...body,kind:'video',compare:true,shotIds:[body.shotId]});status=201; }
         else if (parts[3] === 'select' && req.method === 'POST') {
           const shot = project.shots.find(shot => shot.id === body.shotId) ?? fail('镜头不存在。');
           if (shotBusy(project.id, shot.id)) fail('请等待该镜头任务结束。', 409);
@@ -331,13 +341,17 @@ export function createProjects({ state, save, submitJob, refresh, json, upstream
           const history = body.kind === 'image' ? shot.imageHistory : shot.videoHistory;
           const job = jobById(body.jobId);
           if (!history.includes(body.jobId) || job?.status !== 'success') fail('此版本不可用。');
+          if(body.adoptComparison){
+            if(body.kind!=='video'||!job.comparison||!['h3-fast','h3-base'].includes(job.template)||job.frameJobId!==shot.confirmedFrameJobId)fail('该对比版本已不对应当前首帧。');
+            if(!videoMatches(project,{...shot,videoTemplate:job.template},job,state.assets))fail('当前镜头参数已变化，不能直接采用此前的对比版本。');
+          }
           const signature = characterContext(project, shot).signature;
           if (job.source!=='external'&&!(body.kind==='video'&&shot.frameApproval)&&signature && job.characterSignature !== signature) fail('该版本来自旧角色设定，请重做首帧或选择当前设定对应的版本。');
           const plan=shotPlan(project,shot,state.assets);
           if(body.kind==='image'&&job.source!=='external'&&plan.frameSignature&&job.frameSignature!==plan.frameSignature)fail('该首帧来自旧画面设定，请重做或恢复对应设定。');
-          if(body.kind==='video'&&!videoMatches(project,shot,job,state.assets))fail('该视频与当前首帧或镜头设定不匹配。');
+          if(body.kind==='video'&&!videoMatches(project,body.adoptComparison?{...shot,videoTemplate:job.template}:shot,job,state.assets))fail('该视频与当前首帧或镜头设定不匹配。');
           if (body.kind === 'image') { if(job.source==='external')externalFrames.approve(project,shot,job);else{shot.imageJobId = job.id; shot.confirmedFrameJobId = job.id;delete shot.frameApproval;} }
-          else { if(shot.videoJobId!==job.id)shot.edit=validateEdit({gain:shot.edit?.gain,mute:shot.edit?.mute,notes:shot.edit?.notes},job); shot.videoJobId = job.id; }
+          else { if(body.adoptComparison)shot.videoTemplate=job.template;if(shot.videoJobId!==job.id)shot.edit=validateEdit({gain:shot.edit?.gain,mute:shot.edit?.mute,notes:shot.edit?.notes},job); shot.videoJobId = job.id; }
           save(); result = shot;
         } else if (parts[3] === 'export' && req.method === 'POST') { result = startExport(project); status = 201; }
         else fail('接口不存在。', 404);

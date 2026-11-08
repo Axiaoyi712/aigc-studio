@@ -1,7 +1,7 @@
 import { openProjects, closeProjects } from './projects.js';
 import { upscaleMarkup,upscaleClick } from './upscale.js';
 import { showPromptPicker, openPromptPage } from './prompts.js';
-import { cameras, actions, styles, normalizeVideoOptions, composeVideoPrompt, videoDurations, videoProfileLabels, videoResolutionLabel } from './video-options.js';
+import { cameras, actions, styles, normalizeVideoOptions, composeVideoPrompt, videoDurations, videoProfileLabels, videoResolutionLabel,videoSpecification } from './video-options.js';
 localStorage.removeItem('aigc-video-mode');
 const $ = selector => document.querySelector(selector);
 const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
@@ -39,8 +39,11 @@ function selectedVideo() { return normalizeVideoOptions(Object.fromEntries([...d
 function updatePromptPreview() {
   if (section !== 'video') return;
   const video = selectedVideo();
+  const nativeOption=document.querySelector('[data-video="profile"] option[value="native720"]');if(nativeOption)nativeOption.disabled=video.frames>124||video.aspect==='source';
+  for(const option of document.querySelectorAll('[data-video="frames"] option'))option.disabled=video.profile==='native720'&&Number(option.value)>124;
+  const sourceOption=document.querySelector('[data-video="aspect"] option[value="source"]');if(sourceOption)sourceOption.disabled=video.profile==='native720';
   for (const [profile, title] of Object.entries(videoProfileLabels(video))) { const option=document.querySelector(`[data-video="profile"] option[value="${profile}"]`);if(option)option.textContent=title; }
-  $('#video-option-help').textContent = currentTemplate()?.maxImages ? `生成规格：${videoResolutionLabel(video)}。多参考实验仅开放已验证的约 3～5 秒省显存档；参考图用于主体与构图约束，不强制作为首帧。` : `生成规格：${videoResolutionLabel(video)}。${video.profile === 'high' ? '高分辨率需要更多显存和时间；可先用省显存档预览动作。' : '可切换高分辨率档获得更大画面。'}固定比例会居中裁切首帧。`;
+  $('#video-option-help').textContent = currentTemplate()?.maxImages ? `生成规格：${videoResolutionLabel(video)}。多参考实验仅开放已验证的约 3～5 秒省显存档；参考图用于主体与构图约束，不强制作为首帧。` : `原生生成：${videoSpecification(video).description}。${video.frames<124?'约3秒为实验短片，建议先用5.17秒验证动作和口型。':''}原生720p档限3～5秒，需要更多显存。固定比例会居中裁切首帧，高清精修属于后处理。`;
   $('#composed-prompt').textContent = composeVideoPrompt($('#prompt').value, video);
   $('#video-specs').innerHTML = `<span>${(video.frames / 24).toFixed(2)} 秒 / ${video.frames} 帧</span><span>24 FPS</span><span>${videoResolutionLabel(video)}</span><span>${video.sound === 'mute' ? '静音' : '保留声音'}</span>`;
 }

@@ -30,7 +30,7 @@ async function harness(t){
  await mkdir(resolve(temp,'workflows'),{recursive:true});await mkdir(resolve(comfyRoot,'output'),{recursive:true});await mkdir(resolve(comfyRoot,'input/aigc-studio'),{recursive:true});
  await copyFile(resolve(appRoot,'image-info.py'),resolve(temp,'image-info.py'));
  const graph={nodes:[{id:1,type:'LoadImage',widgets_values:['fixture.png']},{id:2,type:'SaveImage',widgets_values:['fixture'],inputs:[{name:'images',link:1}]}],links:[[1,1,0,2,0,'IMAGE']]};
- for(const name of ['flux-edit','h3-fast'])await writeFile(resolve(temp,'workflows',name+'.json'),JSON.stringify(graph));
+ for(const name of ['flux-edit','h3-fast','h3-base'])await writeFile(resolve(temp,'workflows',name+'.json'),JSON.stringify(graph));
  const engine={running:[],history:{},submitted:[]};
  const upstream=http.createServer(async(req,res)=>{const chunks=[];for await(const c of req)chunks.push(c);const body=Buffer.concat(chunks);let value;
   if(req.url==='/object_info')value={LoadImage:{input:{required:{image:[['fixture.png']]}},output:['IMAGE']},SaveImage:{input:{required:{images:['IMAGE'],filename_prefix:['STRING']}},output:[]}};
@@ -118,4 +118,29 @@ test('explicit permanent deletion clears every alias, approval and project refer
  const original=localMedia(h.config,h.app.state.jobs.find(j=>j.id===a.id).outputs[0]);await h.json('/api/jobs/delete',{jobIds:[a.id]});assert.equal(existsSync(original),false);assert.ok(existsSync(source),'external unmanaged source remains outside permanent deletion scope');
  for(const project of [p,q]){const shot=project.shots[0];assert.equal(shot.imageJobId,null);assert.equal(shot.confirmedFrameJobId,null);assert.equal(shot.frameApproval??null,null);assert.deepEqual(shot.imageHistory,[]);}
  for(const id of [a.id,b.id]){const frame=h.app.state.jobs.find(j=>j.id===id);assert.ok(frame.deletedAt);assert.deepEqual(frame.outputs,[]);}
+});
+
+test('A/B queues two pinned variants and adoption changes only the selected shot',options,async t=>{
+ const h=await harness(t),p=await h.project(),frame=await h.importFrame(p,await h.source());await h.confirm(p,frame.id);
+ p.shots[0].motionMode='steady';p.shots[0].frames=124;await h.json('/api/projects/'+p.id,p);await h.json('/api/batch-queue/pause',{paused:true});
+ const request={requestId:randomUUID(),shotId:p.shots[0].id,seed:42},items=await h.json(`/api/projects/${p.id}/compare`,request,201);assert.equal(items.length,2);assert.deepEqual(items.map(q=>q.input.template),['h3-fast','h3-base']);
+ assert.equal(items[0].input.prompt,items[1].input.prompt);assert.equal(items[0].frameJobId,items[1].frameJobId);assert.deepEqual(items[0].input.video,items[1].input.video);assert.equal(items[0].input.seed,42);assert.equal(items[1].input.seed,42);assert.equal(items[0].comparison.frameHash,frame.externalFrame.sha256);assert.equal((await h.json(`/api/projects/${p.id}/compare`,request,201)).length,2);assert.equal(h.app.state.batchQueue.length,2);
+ await h.dispatch();assert.equal(h.engine.submitted.length,1);assert.equal(p.shots[0].videoJobId,undefined);
+ await writeFile(resolve(h.config.comfyRoot,'output','a.mp4'),'synthetic first variant');h.engine.running=[];h.engine.history[items[0].id]={status:{status_str:'success',completed:true},outputs:{2:{gifs:[{filename:'a.mp4',subfolder:'',type:'output'}]}}};await h.app.tick();assert.equal(h.engine.submitted.length,2);
+ assert.equal(h.engine.submitted[0].prompt['1'].inputs.image,h.engine.submitted[1].prompt['1'].inputs.image);
+ await writeFile(resolve(h.config.comfyRoot,'output','b.mp4'),'synthetic second variant');h.engine.running=[];h.engine.history[items[1].id]={status:{status_str:'success',completed:true},outputs:{2:{gifs:[{filename:'b.mp4',subfolder:'',type:'output'}]}}};await h.app.tick();
+ const current=h.app.state.projects.find(x=>x.id===p.id),shot=current.shots[0];assert.equal(shot.videoHistory.length,2);assert.equal(shot.videoJobId,undefined);assert.equal(current.videoTemplate,'h3-fast');
+ await h.json(`/api/projects/${p.id}/select`,{shotId:shot.id,kind:'video',jobId:items[1].id,adoptComparison:true});assert.equal(shot.videoTemplate,'h3-base');assert.equal(current.videoTemplate,'h3-fast');assert.equal(shot.videoJobId,items[1].id);assert.ok(videoMatches(current,shot,h.app.state.jobs.find(j=>j.id===items[1].id),h.app.state.assets));
+});
+
+test('A/B rejects an unconfirmed frame atomically and rechecks the pinned bytes before either variant',options,async t=>{
+ const h=await harness(t),p=await h.project(),frame=await h.importFrame(p,await h.source());let response=await h.post(`/api/projects/${p.id}/compare`,{requestId:randomUUID(),shotId:p.shots[0].id});assert.equal(response.status,400);assert.equal(h.app.state.batchQueue.length,0);
+ await h.confirm(p,frame.id);await h.json('/api/batch-queue/pause',{paused:true});const items=await h.json(`/api/projects/${p.id}/compare`,{requestId:randomUUID(),shotId:p.shots[0].id},201);assert.equal(items[0].input.seed,42);assert.equal(items[1].input.seed,42);
+ await writeFile(localMedia(h.config,h.app.state.jobs.find(j=>j.id===frame.id).outputs[0]),png(30));await h.dispatch();assert.equal(h.engine.submitted.length,0);assert.equal(h.app.state.batchQueue[0].status,'failed');
+});
+
+test('shot modes and environment are persisted and native720 rejects incompatible shot duration before save',options,async t=>{
+ const h=await harness(t),p=await h.project();p.production.environmentMode='shot';p.production.location='全片办公室和浴室';p.shots[0].motionMode='steady';p.shots[0].videoTemplate='h3-base';p.shots[0].director={lighting:'窗侧自然光',location:'办公室',voice:'成年男声',dialogue:'你好。'};
+ await h.json('/api/projects/'+p.id,p);const current=h.app.state.projects.find(x=>x.id===p.id);assert.equal(current.shots[0].motionMode,'steady');assert.equal(current.shots[0].director.lighting,'窗侧自然光');assert.equal(current.shots[0].director.voice,'成年男声');
+ const bad=structuredClone(current);bad.video={frames:124,profile:'native720',aspect:'portrait'};bad.shots[0].frames=175;const response=await h.post('/api/projects/'+p.id,bad);assert.equal(response.status,400);assert.notEqual(h.app.state.projects.find(x=>x.id===p.id).video.profile,'native720');
 });

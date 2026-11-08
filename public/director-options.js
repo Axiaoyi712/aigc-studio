@@ -1,7 +1,7 @@
 export const framing = {custom:'按描述',wide:'远景：环境为主',full:'全景：人物全身',medium:'中景：腰部以上',close:'近景：胸口以上',detail:'特写：指定局部'};
 export const angles = {custom:'按描述',eye:'平视',low:'仰拍',high:'俯拍',over:'越肩视角',top:'正上方俯视'};
 export const cameraMoves = {custom:'按描述',static:'固定机位',push:'缓慢推近',pull:'缓慢拉远',left:'向左平移',right:'向右平移',panLeft:'向左摇镜',panRight:'向右摇镜',follow:'跟随',orbit:'轻微环绕'};
-export const directorText = {intent:'镜头表达什么',position:'人物站位与视线',foreground:'前景',background:'背景',action:'动作与可见情绪',dialogue:'台词（原文）',sound:'环境与动作声音',music:'本镜头音乐要求',location:'本镜头地点（留空继承）',time:'本镜头时间天气（留空继承）',wardrobe:'本镜头服装（留空保持定稿）'};
+export const directorText = {intent:'镜头表达什么',position:'人物站位与视线',foreground:'前景',background:'背景',action:'动作与可见情绪',dialogue:'台词原文（只填写一次）',voice:'说话声音，例如低沉男声',speakerId:'说话角色',sound:'本镜头环境与动作声音',music:'本镜头音乐要求',palette:'本镜头色调',lighting:'本镜头光照',location:'本镜头地点与空间',time:'本镜头时间天气',wardrobe:'本镜头服装（留空保持定稿）'};
 export const stateFields = {position:'场景中位置',holding:'持物与道具状态',gaze:'视线',motion:'运动方向',light:'主光方向'};
 const words = value => String(value ?? '').trim();
 export function normalizeDirector(value = {}) {
@@ -14,6 +14,8 @@ export function normalizeDirector(value = {}) {
 export function normalizeProduction(value = {}, assets = []) {
   const result = {};
   for(const key of ['story','style','palette','lighting','location','time','ambience']){result[key]=words(value[key]);if(result[key].length>1200)throw Error('项目设定单项不超过 1200 字。');}
+  result.environmentMode=value.environmentMode??'shot';
+  if(!['shot','shared'].includes(result.environmentMode))throw Error('请选择按镜头设置环境，或全片同一环境。');
   result.frameQuality=value.frameQuality??'standard';
   result.frameAspect=value.frameAspect??'video';
   result.exportSize=value.exportSize??'1280x720';

@@ -27,5 +27,5 @@ export function characterContext(project, shot) {
   const backgroundPeople=/路人|人群|行人|群众|经过的人/.test([shot.director?.background,shot.videoPrompt].join(' '));
   const descriptions = roles.map(role => `角色「${role.name}」：${role.identity||role.description||'保持参考中的脸型、五官、发型和体型。'}${wardrobe||role.wardrobe?'；本镜头服装：'+(wardrobe||role.wardrobe):''}`).join('\n');
   const mappings = roles.map(role => `参考图 ${role.referenceIds.map(id => referenceIds.indexOf(id)+1).join('、')} 对应角色「${role.name}」。`).join('\n');
-  return {roles,referenceIds,signature,imagePrefix: roles.length ? `固定角色参考：\n${mappings}\n${descriptions}\n保持各角色身份${wardrobe?'；服装采用本镜头指定款式':'与服装'}，角色之间不要混脸或互换外观。\n镜头画面：` : '',videoPrefix: roles.length ? `以已确认首帧中的人物为准，保持以下角色的五官、发型、服装、体型和配饰，${backgroundPeople?'配角按镜头正文安排':'不添加新人物'}，不互换身份。\n${descriptions}\n镜头动作：` : ''};
+  return {roles,referenceIds,signature,imagePrefix: roles.length ? `固定角色参考：\n${mappings}\n${descriptions}\n保持各角色身份${wardrobe?'；服装采用本镜头指定款式':'与服装'}，角色之间不要混脸或互换外观。\n镜头画面：` : '',videoPrefix: roles.length ? `以已确认首帧中的角色为准，保持以下角色的外观、服装、体型和配饰，${backgroundPeople?'配角按镜头正文安排':'不添加新角色'}，不互换身份。\n${descriptions}\n镜头动作：` : ''};
 }
