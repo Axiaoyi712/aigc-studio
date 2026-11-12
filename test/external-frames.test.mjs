@@ -11,7 +11,7 @@ import {createStorage} from '../storage.mjs';
 import {localMedia,primaryOutput} from '../media.mjs';
 
 const appRoot=resolve(dirname(fileURLToPath(import.meta.url)),'..');
-const pythonPath=process.env.AIGC_TEST_PYTHON||'E:/ComfyUI-Intel/ComfyUI-NVIDIA/ComfyUI_windows_portable/python_embeded/python.exe';
+const pythonPath=process.env.AIGC_TEST_PYTHON||'';
 const options={skip:existsSync(pythonPath)?false:'Set AIGC_TEST_PYTHON to a Python with Pillow.'};
 function png(width=32,height=48){
  function chunk(type,data){const name=Buffer.from(type),body=Buffer.concat([name,data]);let crc=0xffffffff;for(const byte of body){crc^=byte;for(let i=0;i<8;i++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);}const length=Buffer.alloc(4),sum=Buffer.alloc(4);length.writeUInt32BE(data.length);sum.writeUInt32BE((crc^0xffffffff)>>>0);return Buffer.concat([length,body,sum]);}

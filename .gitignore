@@ -32,3 +32,14 @@ __pycache__/
 *.7z
 Thumbs.db
 .DS_Store
+
+# Reference originals and generated previews are local-only
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.webm
+*.mkv
+*.m4a
+*.ogg
+*.flac

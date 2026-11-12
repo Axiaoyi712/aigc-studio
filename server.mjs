@@ -18,6 +18,7 @@ import {uploadFile} from './uploads.mjs';
 import {createAssetCatalog} from './asset-catalog.mjs';
 import {createFolderSync} from './folder-sync.mjs';
 import {createExternalFrames} from './external-frames.mjs';
+import { createRoleComposer } from './role-composer.mjs';
 
 const root = dirname(fileURLToPath(import.meta.url));
 const activeStates = new Set(['submitting', 'queued', 'running', 'recovering']);
@@ -218,6 +219,7 @@ export function createStudio(config, { appRoot = root, dataRoot = resolve(appRoo
   const projectFiles = createProjectFiles({state,save,config,appRoot,dataRoot,send,readBody});
   const assistant = createAssistant({config,state,save,dataRoot,json,send,readBody,isGenerating:()=>submitting||projects.isExporting()||upscale.busy()||state.jobs.some(j=>activeStates.has(j.status))});
   const upscale=createUpscaler({state,save,config,appRoot,send,readBody,json,post,publicJob,isBusy:()=>submitting||projects.isExporting()||state.jobs.some(j=>activeStates.has(j.status))||state.batchQueue.some(q=>['waiting','dispatched'].includes(q.status)),release:()=>assistant.release()});
+  const composer = createRoleComposer({ state, config, dataRoot, save, send, readBody, submitJob, publicJob, lifecycle, storage, isBusy: () => submitting || upscale.busy() || projects.isExporting() || state.jobs.some(j => activeStates.has(j.status)) || state.batchQueue.some(q => ['waiting', 'dispatched'].includes(q.status)) });
   save();
   const timer = setInterval(() => { connectEvents(); if(!submitting&&!upscale.busy()&&!projects.isExporting()&&!state.jobs.some(j=>activeStates.has(j.status))&&!state.batchQueue.some(q=>['waiting','dispatched'].includes(q.status))){try{if(folderSync.scan())save();}catch(error){state.folderSync={error:error.message,checkedAt:new Date().toISOString()};console.error('媒体同步暂未完成：',error.message);}} void projects.tick(); }, 3000);
   timer.unref();
@@ -232,6 +234,7 @@ export function createStudio(config, { appRoot = root, dataRoot = resolve(appRoo
         if (!url.pathname.startsWith('/api/uploads') && url.pathname!=='/api/audio' && url.pathname!=='/api/projects/import' && req.headers['content-type']?.split(';')[0] !== 'application/json') throw fault('请求必须使用 JSON。', 415);
       }
       if (await storage.handle(req,res,url,send)) return;
+      if (await composer.handle(req,res,url)) return;
       if (await catalog.handle(req,res,url)) return;
       if (await externalFrames.handle(req,res,url)) return;
       if (await folderSync.handle(req,res,url)) return;
@@ -349,7 +352,7 @@ export function createStudio(config, { appRoot = root, dataRoot = resolve(appRoo
       if (req.method === 'GET' && url.pathname === '/api/roadmap') {
         return send(res, 200, { content: await readFile(resolve(appRoot, '制作路线.md'), 'utf8') });
       }
-      const pages = { '/': 'index.html', '/app.js': 'app.js', '/style.css': 'style.css', '/icon.svg': 'icon.svg', '/favicon.ico': 'icon.svg', '/projects.js': 'projects.js', '/projects.css': 'projects.css', '/prompts.js': 'prompts.js', '/prompts.css': 'prompts.css', '/video-options.js': 'video-options.js', '/director-options.js':'director-options.js', '/upscale.js':'upscale.js', '/production-ui.js':'production-ui.js', '/production.css':'production.css', '/assets-ui.js':'assets-ui.js','/assets.css':'assets.css','/frame-import.js':'frame-import.js','/frame-import.css':'frame-import.css' };
+      const pages = { '/composition.js': 'composition.js', '/role-composer.js': 'role-composer.js', '/role-composer.css': 'role-composer.css', '/': 'index.html', '/app.js': 'app.js', '/style.css': 'style.css', '/icon.svg': 'icon.svg', '/favicon.ico': 'icon.svg', '/projects.js': 'projects.js', '/projects.css': 'projects.css', '/prompts.js': 'prompts.js', '/prompts.css': 'prompts.css', '/video-options.js': 'video-options.js', '/director-options.js':'director-options.js', '/upscale.js':'upscale.js', '/production-ui.js':'production-ui.js', '/production.css':'production.css', '/assets-ui.js':'assets-ui.js','/assets.css':'assets.css','/frame-import.js':'frame-import.js','/frame-import.css':'frame-import.css' };
       if (req.method === 'GET' && pages[url.pathname]) {
         const file = pages[url.pathname];
         res.writeHead(200, { 'Content-Type': mime[extname(file)], 'Cache-Control': 'no-cache', 'X-Content-Type-Options': 'nosniff' });

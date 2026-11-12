@@ -29,7 +29,9 @@ export function createMediaLifecycle({state,config,dataRoot,storage}){
     if(affectedJobs.has(s.frameApproval?.jobId))delete s.frameApproval;
    }
   }
-  for(const j of state.jobs||[])j.images=(j.images||[]).filter(id=>!affectedUploads.has(id));
+  for(const j of state.jobs||[]){j.images=(j.images||[]).filter(id=>!affectedUploads.has(id));if(j.composition)j.composition.references=j.composition.references.filter(ref=>!affectedUploads.has(ref.uploadId));}
+  if(state.compositionReferences)state.compositionReferences=state.compositionReferences.filter(ref=>!affectedUploads.has(ref.uploadId));
+  for(const recipe of state.compositionRecipes||[])if(recipe.composition.references.some(ref=>affectedUploads.has(ref.uploadId))){recipe.missingReferences=[...(recipe.missingReferences||[]),...recipe.composition.references.filter(ref=>affectedUploads.has(ref.uploadId)).map(ref=>ref.name)];recipe.composition.references=recipe.composition.references.filter(ref=>!affectedUploads.has(ref.uploadId));}
   for(const q of state.batchQueue||[])if(affectedJobs.has(q.id)||affectedJobs.has(q.frameJobId)||(q.input?.images||[]).some(id=>affectedUploads.has(id))){q.status='cancelled';q.error='关联媒体已彻底删除。';}
   state.exports=(state.exports||[]).filter(e=>!targets.has(key(e.storagePath||resolve(dataRoot,'exports',e.id+'.mp4'))));
   const audioIds=new Set((state.audioAssets||[]).filter(a=>targets.has(key(a.storagePath||resolve(dataRoot,'audio',a.filename)))).map(a=>a.id));
@@ -46,16 +48,17 @@ export function createMediaLifecycle({state,config,dataRoot,storage}){
  function removeProject(id){
   const p=state.projects.find(p=>p.id===id);if(!p)return;
   const folder=storage.projectFolder(p);if(!folder.startsWith(root+sep)||existsSync(folder)&&!realpathSync(folder).startsWith(realpathSync(root)+sep))throw fault('项目目录无效，拒绝删除。');
-  const owned=state.assets.filter(a=>a.ownerProjectId===id),sharedUploads=new Set(state.assets.filter(a=>a.ownerProjectId!==id).map(a=>a.uploadId));
-  const sharedFiles=[...state.assets.filter(a=>a.ownerProjectId!==id).map(a=>uploadPath(config,state.uploads[a.uploadId])),...state.jobs.filter(j=>j.projectId!==id&&!j.deletedAt).flatMap(j=>(j.outputs||[]).map(f=>localMedia(config,f)))].filter(Boolean),sharedPaths=new Set(sharedFiles.map(key));
+  const owned=state.assets.filter(a=>a.ownerProjectId===id),ownedReferences=(state.compositionReferences||[]).filter(r=>r.projectId===id),sharedUploads=new Set([...state.assets.filter(a=>a.ownerProjectId!==id),...(state.compositionReferences||[]).filter(r=>r.projectId!==id)].map(a=>a.uploadId));
+  const sharedFiles=[...state.assets.filter(a=>a.ownerProjectId!==id).map(a=>uploadPath(config,state.uploads[a.uploadId])),...(state.compositionReferences||[]).filter(r=>r.projectId!==id).map(r=>uploadPath(config,state.uploads[r.uploadId])),...Object.values(state.uploads).filter(u=>u.libraryId).map(u=>uploadPath(config,u)),...state.jobs.filter(j=>j.projectId!==id&&!j.deletedAt).flatMap(j=>(j.outputs||[]).map(f=>localMedia(config,f)))].filter(Boolean),sharedPaths=new Set(sharedFiles.map(key));
   // A shared original must leave the deleted directory before the directory itself is removed.
   for(const path of new Set(sharedFiles))if(key(path).startsWith(key(folder)+sep)&&existsSync(path)){const stored=storage.relocate(path,resolve(root,'公共素材库','首帧',storage.digest(path)+extname(path)));sharedPaths.delete(key(path));sharedPaths.add(key(stored.path));}
-  const jobs=state.jobs.filter(j=>j.projectId===id),extras=[...(state.exports||[]).filter(e=>e.projectId===id).map(e=>e.storagePath||resolve(dataRoot,'exports',e.id+'.mp4')),...owned.filter(a=>!sharedUploads.has(a.uploadId)).map(a=>uploadPath(config,state.uploads[a.uploadId])).filter(path=>!sharedPaths.has(key(path)))];
+  const jobs=state.jobs.filter(j=>j.projectId===id),extras=[...(state.exports||[]).filter(e=>e.projectId===id).map(e=>e.storagePath||resolve(dataRoot,'exports',e.id+'.mp4')),...[...owned,...ownedReferences].filter(a=>!sharedUploads.has(a.uploadId)).map(a=>uploadPath(config,state.uploads[a.uploadId])).filter(path=>!sharedPaths.has(key(path)))];
   // Validate extras before deleting any project output.
   const retained=jobs.filter(j=>(j.outputs||[]).some(f=>sharedPaths.has(key(localMedia(config,f)))));
   extras.filter(Boolean).forEach(safe);removeJobs(jobs.filter(j=>!retained.includes(j)).map(j=>j.id));detach(extras);
   for(const j of retained){j.deletedAt=new Date().toISOString();j.outputs=[];for(const other of state.projects)for(const s of other.shots){s.imageHistory=(s.imageHistory||[]).filter(x=>x!==j.id);s.videoHistory=(s.videoHistory||[]).filter(x=>x!==j.id);for(const name of ['imageJobId','confirmedFrameJobId','videoJobId'])if(s[name]===j.id)s[name]=null;if(s.frameApproval?.jobId===j.id)delete s.frameApproval;}}
   state.projects=state.projects.filter(p=>p.id!==id);state.batchQueue=(state.batchQueue||[]).filter(q=>q.projectId!==id);
+  if(state.compositionReferences)state.compositionReferences=state.compositionReferences.filter(r=>r.projectId!==id);
   if(existsSync(folder))rmSync(folder,{recursive:true,force:true});
  }
  function reconcile(){

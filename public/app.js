@@ -1,6 +1,7 @@
 import { openProjects, closeProjects } from './projects.js';
 import { upscaleMarkup,upscaleClick } from './upscale.js';
 import { showPromptPicker, openPromptPage } from './prompts.js';
+import { createRoleComposerUI } from './role-composer.js';
 import { cameras, actions, styles, normalizeVideoOptions, composeVideoPrompt, videoDurations, videoProfileLabels, videoResolutionLabel,videoSpecification } from './video-options.js';
 localStorage.removeItem('aigc-video-mode');
 const $ = selector => document.querySelector(selector);
@@ -21,6 +22,7 @@ const selectedTemplates = {};
 let polling = false;
 const selectedWorks = new Set();
 let deletingWorks = false;
+let imageMode = 'ordinary';
 function videoBase(template) { return template.maxImages||template.images === 2 ? template.defaultPrompt : '基于首帧画面，保持主体的外观、服装和场景一致，动作自然连贯。'; }
 function optionSelect(key, label, choices, value) { return `<label>${label}<select data-video="${key}">${Object.entries(choices).map(([id, name]) => `<option value="${id}" ${String(value) === id ? 'selected' : ''}>${name}</option>`).join('')}</select></label>`; }
 function renderVideoOptions() {
@@ -60,12 +62,26 @@ function notice(message, isError = false) {
   $('#notice').textContent = message;
   $('#notice').className = 'notice ' + (isError ? 'error' : 'success');
 }
+const composer = createRoleComposerUI({ panel: $('#composer-panel'), api, post, notice, refreshJobs, openProject: () => switchSection('projects') });
+function syncImageMode() {
+  $('#image-modes').hidden = section !== 'image';
+  $('#composer-panel').hidden = section !== 'image' || imageMode !== 'compose';
+  for (const button of document.querySelectorAll('[data-image-mode]')) { button.classList.toggle('selected', button.dataset.imageMode === imageMode); button.setAttribute('aria-pressed', String(button.dataset.imageMode === imageMode)); }
+  if (section === 'image') $('#create-panel').hidden = imageMode === 'compose';
+}
+function setImageMode(mode, target) {
+  imageMode = mode; syncImageMode();
+  if (mode === 'compose') void composer.open(target).catch(error => notice(error.message, true));
+}
+$('#image-modes').addEventListener('click', event => { const button = event.target.closest('[data-image-mode]'); if (button) setImageMode(button.dataset.imageMode); });
+document.addEventListener('open-role-composer', event => { switchSection('image'); setImageMode('compose', event.detail); window.scrollTo({ top: 0, behavior: 'smooth' }); });
 function currentTemplate() { return templates.find(item => item.id === $('#template').value); }
 function imagesFor(template) {
   if (!uploaded.has(template.id)) uploaded.set(template.id, Array(template.images).fill(null));
   return uploaded.get(template.id);
 }
 function updateButton() {
+  composer.update({ jobs, connected, available: !!templates.find(t => t.id === 'flux-3ref')?.available });
   const template = currentTemplate();
   const busy = jobs.some(job => active.has(job.status));
   $('#generate').disabled = !connected || !template?.available || sending || uploading > 0 || busy || imagesFor(template).some(image => !image);
@@ -99,6 +115,7 @@ function renderTemplate() {
 }
 function switchSection(value) {
   section = value;
+  syncImageMode();
   document.querySelectorAll('[data-section]').forEach(button => button.classList.toggle('selected', button.dataset.section === value));
   $('#projects-panel').hidden = value !== 'projects';
   $('#prompts-panel').hidden = value !== 'prompts';
@@ -118,7 +135,7 @@ function switchSection(value) {
   }
   closeProjects();
   $('#breadcrumb').textContent = labels[value];
-  $('#create-panel').hidden = value === 'works';
+  $('#create-panel').hidden = value === 'works' || (value === 'image' && imageMode === 'compose');
   $('#view-all').hidden = value === 'works';
   $('#recent-title').textContent = value === 'works' ? '全部作品与任务' : '最近作品';
   $('#recent-description').textContent = value === 'works' ? '成品、失败原因与生成参数，都可以在这里查看。' : '每一次创作，都留有记录。';

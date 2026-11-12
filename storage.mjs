@@ -1,7 +1,7 @@
 import {mkdirSync,existsSync,renameSync,writeFileSync,readFileSync,unlinkSync,statSync,realpathSync,openSync,readSync,closeSync} from 'node:fs';
 import {resolve,relative,extname,sep} from 'node:path';
 import {createHash} from 'node:crypto';
-import {spawn,execFile} from 'node:child_process';
+import {execFile} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {localMedia,primaryOutput} from './media.mjs';
 import {uploadFile,uploadPath,uploadName} from './uploads.mjs';
@@ -72,8 +72,12 @@ export function createStorage(config,state,dataRoot){
   if(m[1]==='jobs'){const j=state.jobs.find(j=>j.id===m[2]),f=primaryOutput(j);if(f)path=resolve(localMedia(config,f),'..');}
   if(m[1]==='assets'){const a=state.assets.find(a=>a.id===m[2]);file=uploadPath(config,state.uploads[a?.uploadId]);if(file&&existsSync(file))path=resolve(file,'..');else throw Object.assign(Error('原文件已丢失，请重新关联图片。'),{status:404});}
   if(!path||!existsSync(path))throw Object.assign(Error('文件夹不存在。'),{status:404});
-  if(file&&!url.searchParams.has('group'))await new Promise((ok,reject)=>execFile('powershell.exe',['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',fileURLToPath(new URL('./scripts/reveal-file.ps1',import.meta.url)),'-LiteralPath',file],{windowsHide:true,timeout:15000},error=>error?reject(Object.assign(Error('定位原文件失败，请复制路径查看。'),{status:500})):ok()));
-  else await new Promise((ok,reject)=>{const child=spawn('explorer.exe',[path],{windowsHide:true,stdio:'ignore'});child.once('error',error=>reject(Object.assign(Error('无法打开资源管理器：'+error.message),{status:500})));child.once('spawn',()=>{child.unref();ok();});});send(res,200,{path,file,message:file?'已定位原文件':'已请求打开文件夹'});return true;
+  const selectedFile=file&&!url.searchParams.has('group');
+  const opened=await new Promise((ok,reject)=>execFile('powershell.exe',['-NoProfile','-NonInteractive','-STA','-ExecutionPolicy','Bypass','-File',fileURLToPath(new URL('./scripts/reveal-file.ps1',import.meta.url)),'-LiteralPath',selectedFile?file:path],{windowsHide:true,timeout:15000},(error,stdout)=>{
+   if(error){reject(Object.assign(Error('打开文件位置失败，请复制路径查看：'+(selectedFile?file:path)),{status:500}));return;}
+   try{ok(JSON.parse(stdout));}catch{reject(Object.assign(Error('无法确认资源管理器状态，请复制路径查看：'+path),{status:500}));}
+  }));
+  send(res,200,{path,file,focused:opened.focused,reused:opened.reused,message:opened.focused?(selectedFile?'已定位原文件':'已切换到文件夹'):'文件夹已打开，请从任务栏切换到资源管理器'});return true;
  }
  return {sync,prefix,imageName,handle,root,projectFolder,shotFolder,managed,digest,storeFile:intern,relocate};
 }

@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { normalizeVideoOptions, composeVideoPrompt, videoCanvas } from './public/video-options.js';
+import { normalizeComposition, composeReferencePrompt } from './public/composition.js';
 
 export const templates = [
   { id: 'h3-fast', section: 'video', name: 'H3 · 快速 8 步', file: 'h3-fast.json', source: '视频-01-MiniMax-H3图生视频-8GB测试版.json', images: 1, steps: 8, description: '单张首帧 · 约 5.17 秒 · 原生音频', defaultPrompt: 'A single continuous shot based on the input image. Preserve the subject, appearance, outfit, lighting and background. Static camera, gentle natural movement, no scene cuts, no text. Audio: quiet ambient sound, no speech.' },
@@ -13,6 +14,7 @@ export const templates = [
 templates.splice(2, 0, { ...templates[0], id: 'h3-keyframes', name: 'H3 · 首尾帧过渡 · 8 步', source: null, images: 2, description: '上传起始与结束画面，生成中间过渡', defaultPrompt: '保持主体外观与服装一致，从首帧自然过渡到尾帧，动作连贯。' });
 templates.push({ ...templates.find(item => item.id === 'flux-3ref'), id: 'flux-2ref', name: 'FLUX Klein · 双图参考', source: null, images: 2, description: '两张独立参考 · 按描述生成同场或不同视角首帧', defaultPrompt: '依据参考图保留角色五官、发型、服装和体型，按描述安排人物与场景，不互换不同角色的身份。' });
 templates.push({ ...templates.find(item => item.id === 'flux-3ref'), id: 'flux-multi', name: 'FLUX Klein · 多图参考（4～20张）', source: null, images: 4, maxImages: 20, internal: true, description: '项目首帧多图参考 · 最多二十张独立图片' });
+templates.push({ ...templates.find(item => item.id === 'flux-3ref'), id: 'flux-compose', section: 'image', name: '角色合成 · FLUX Klein', source: null, images: 2, maxImages: 5, internal: true });
 templates.push({...templates.find(item=>item.id==='h3-base'),id:'h3-reference',name:'H3 · 多参考 20 步 · 实验',source:null,images:1,maxImages:4,experimental:true,description:'独立 Ref2VA 权重 · 项目中使用角色/场景参考与分镜图 · 首帧不强制对齐',defaultPrompt:'依据参考图中的主体身份、外观与场景，生成自然连贯的短镜头。'});
 
 const widgets = {
@@ -33,6 +35,11 @@ const widgets = {
 };
 
 export function parseRequest(input) {
+  let composition;
+  if (input.template === 'flux-compose') {
+    composition = normalizeComposition(input.composition);
+    input = { ...input, prompt: composeReferencePrompt(composition), images: composition.references.map(ref => ref.uploadId), size: composition.size, seed: composition.seed };
+  }
   const template = templates.find(item => item.id === input.template);
   if (!template) throw new Error('请选择可用的工作流。');
   const prompt = String(input.prompt ?? '').trim();
@@ -48,7 +55,7 @@ export function parseRequest(input) {
     if(template.id==='h3-reference'&&(video.frames>124||video.profile!=='draft'||video.aspect==='source'))throw new Error('本机多参考实验路径仅支持约 3～5 秒、省显存档，并需明确选择横版、竖版或方形。');
     return { template: template.id, prompt: input.video ? composeVideoPrompt(prompt, video) : prompt, sourcePrompt: prompt, images, seed, size, video };
   }
-  return { template: template.id, prompt, images, seed, size };
+  return { template: template.id, prompt, images, seed, size, ...(composition ? { composition } : {}) };
 }
 
 export function compileGraph(graph, input, jobId) {
@@ -114,11 +121,11 @@ export function compileGraph(graph, input, jobId) {
     input.images.forEach((image,i)=>{const id='reference_image_'+i;prompt[id]={class_type:'LoadImage',inputs:{image}};inputs['ref_images.ref_image_'+i]=[id,0];});
     prompt['9']={class_type:'MiniMaxH3ReferenceToVideo',inputs};
   }
-  if (template.id === 'flux-2ref') {
+  if (template.id === 'flux-2ref' || (template.id === 'flux-compose' && input.images.length === 2)) {
     for (const id of ['23','24','25','26']) delete prompt[id];
     prompt['10'].inputs.conditioning = ['22', 0];
   }
-  if (template.id === 'flux-multi') {
+  if (template.id === 'flux-multi' || (template.id === 'flux-compose' && input.images.length > 3)) {
     let previous = '26';
     for (let i = 3; i < input.images.length; i++) {
       const image = `ref_${i + 1}_image`, scale = `ref_${i + 1}_scale`, encode = `ref_${i + 1}_encode`, condition = `ref_${i + 1}_condition`;

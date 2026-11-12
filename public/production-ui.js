@@ -108,13 +108,26 @@ async function assistant(shotId){
 const joinShot=s=>[s.imagePrompt,s.videoPrompt,s.director?.action].filter(Boolean).join('\n');
 function assistantSummary(result){const item=s=>[`首帧画面：${s.imagePrompt||''}`,`镜头动作：${s.videoPrompt||''}`,s.director?.position&&`站位：${s.director.position}`,s.director?.sound&&`声音：${s.director.sound}`].filter(Boolean).join('\n');return result.kind==='translate'?result.content.translation:result.kind==='storyboard'?result.content.shots.map((s,i)=>`${i+1}. ${s.title||'镜头'}\n${item(s)}`).join('\n\n'):item(result.content);}
 function production(){if(!get().production)get().production=normalizeProduction({},context.assets);return get().production;}
+function folderFeedback(message,path='',error=false){
+ let result=$('#project-folder-result');
+ if(!result){result=document.createElement('div');result.id='project-folder-result';result.setAttribute('role','status');$('.project-toolbar').after(result);}
+ result.className='project-folder-result'+(error?' error':'');
+ result.innerHTML=`<span>${h(message)}</span>${path?`<input readonly aria-label="文件夹完整路径" value="${h(path)}"><button type="button" class="project-button" data-copy-folder-path>复制路径</button>`:''}`;
+}
 export async function productionClick(button){
+  if(button.hasAttribute('data-copy-folder-path')){const input=button.parentElement.querySelector('input');try{await navigator.clipboard.writeText(input.value);button.textContent='已复制';}catch{input.focus();input.select();button.textContent='请按 Ctrl+C 复制';}return true;}
   if(button.hasAttribute('data-copy-final')){const text=button.closest('[data-shot-review]').querySelector('[data-final-prompt]');if(navigator.clipboard)await navigator.clipboard.writeText(text.value);else{text.select();document.execCommand('copy');}button.textContent='已复制';return true;}
   if(button.hasAttribute('data-steady-preset')){const shot=get().shots.find(s=>s.id===button.closest('[data-shot]').dataset.shot);shot.motionMode='steady';shot.frames=124;shot.seed=42;shot.videoTemplate='h3-fast';context.changed();await context.save();await context.reload();return true;}
   if(button.hasAttribute('data-run-benchmark')){const card=button.closest('[data-shot]'),shot=get().shots.find(s=>s.id===card.dataset.shot),confirmed=context.getSnapshot().project.shots.find(s=>s.id===shot.id).confirmedFrameJobId;if(!confirmed||card.querySelector('.image-version')?.value!==confirmed)throw Error('请先确认当前选中的首帧，再进行同条件对比。');await context.save();await api(projectPath()+'/compare',{requestId:crypto.randomUUID(),shotId:shot.id,seed:shot.seed===''?42:Number(shot.seed??42)});await context.reload();return true;}
   if(button.hasAttribute('data-compare-results')){await compare(button.closest('[data-shot]').dataset.shot,'video');return true;}
   if(button.dataset.openAssetFolder){await api('/api/assets/'+button.dataset.openAssetFolder+'/folder',{});return true;}
-  if(button.hasAttribute('data-open-project-folder')||button.dataset.openShotFolder){if(context.isDirty())await context.save();await api(projectPath()+'/folder'+(button.dataset.openShotFolder?'?shotId='+button.dataset.openShotFolder:''),{});return true;}
+  if(button.hasAttribute('data-open-project-folder')||button.dataset.openShotFolder){
+   const label=button.textContent;button.disabled=true;button.textContent='正在打开…';
+   try{if(button.dataset.openShotFolder&&context.isDirty())await context.save();const result=await api(projectPath()+'/folder'+(button.dataset.openShotFolder?'?shotId='+button.dataset.openShotFolder:''),{});folderFeedback(result.message,result.path);}
+   catch(error){folderFeedback(error.message,'',true);throw error;}
+   finally{button.disabled=false;button.textContent=label;}
+   return true;
+  }
   if(button.dataset.productionStep){if(context.isDirty())await context.save();setStep(Number(button.dataset.productionStep));return true;}
   if(button.id==='production-next'){await context.save();setStep(step+1);return true;}
   if(button.hasAttribute('data-inherit-state')){const shotId=button.closest('[data-shot]').dataset.shot,index=get().shots.findIndex(s=>s.id===shotId);if(index<1)throw Error('第一镜没有上一镜状态。');const shot=get().shots[index];shot.director=normalizeDirector(shot.director);shot.director.start=structuredClone(normalizeDirector(get().shots[index-1].director).end);context.changed();await context.save();await context.reload();setStep(3);return true;}

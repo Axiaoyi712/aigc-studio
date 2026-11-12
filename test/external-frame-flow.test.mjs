@@ -13,7 +13,7 @@ import {localMedia} from '../media.mjs';
 import {frameMatches,videoMatches} from '../production.mjs';
 
 const appRoot=resolve(dirname(fileURLToPath(import.meta.url)),'..');
-const pythonPath=process.env.AIGC_TEST_PYTHON||'E:/ComfyUI-Intel/ComfyUI-NVIDIA/ComfyUI_windows_portable/python_embeded/python.exe';
+const pythonPath=process.env.AIGC_TEST_PYTHON||'';
 const options={skip:existsSync(pythonPath)?false:'Set AIGC_TEST_PYTHON to a Python with Pillow; tests only decode fixture images.'};
 const digest=bytes=>createHash('sha256').update(bytes).digest('hex');
 
